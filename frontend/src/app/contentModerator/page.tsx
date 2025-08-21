@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "next/navigation"; // 🔹 ADDED
 
 type Decision = {
   status: "approved" | "rejected";
@@ -11,8 +12,6 @@ type Decision = {
 };
 
 const API = process.env.NEXT_PUBLIC_API_BASE; // e.g. http://localhost:8000/api
-
-
 
 const banned = ["hate", "kill", "racist", "sexist", "terror", "suicide"];
 const negWords = ["awful", "stupid", "idiot", "trash", "disgusting", "dumb", "sucks", "hate", "kill"];
@@ -74,6 +73,8 @@ function SignalBar({ label, value }: { label: string; value: number }) {
 }
 
 export default function ContentModeratorPage() {
+  const searchParams = useSearchParams(); // 🔹 ADDED
+
   const [caption, setCaption] = useState("");
   const [hashtags, setHashtags] = useState("");
   const [platform, setPlatform] = useState("instagram");
@@ -88,6 +89,18 @@ export default function ContentModeratorPage() {
     toxic: "This idea is stupid and your page sucks. Do better.",
     banned: "We should kill negativity with positivity. #motivation"
   }), []);
+
+  // 🔹 NEW: auto-paste incoming data from query params
+  useEffect(() => {
+    const qCaption = searchParams.get("caption");
+    const qHashtags = searchParams.get("hashtags");
+    const qPlatform = searchParams.get("platform");
+
+    if (qCaption) setCaption(qCaption);
+    if (qHashtags) setHashtags(qHashtags);
+    if (qPlatform) setPlatform(qPlatform);
+  }, [searchParams]);
+  // (keeps UI identical; only pre-fills values)
 
   const review = async () => {
     setLoading(true);
@@ -109,7 +122,6 @@ export default function ContentModeratorPage() {
 
     try {
       const path = autoForward ? "/moderator/review_and_forward" : "/moderator/review";
-
       const res = await fetch(`${API}${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
