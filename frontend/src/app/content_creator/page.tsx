@@ -97,6 +97,36 @@ export default function Home() {
     }
   };
 
+  // Function to extract hashtags from content
+  const extractHashtags = (content: string): string[] => {
+    const hashtagRegex = /#\w+/g;
+    const matches = content.match(hashtagRegex);
+    return matches ? matches : [];
+  };
+
+  // Function to extract content without hashtags
+  const getContentWithoutHashtags = (content: string): string => {
+    const hashtagRegex = /#\w+/g;
+    return content.replace(hashtagRegex, '').trim();
+  };
+
+  // Function to extract suggested keywords (non-hashtag words that might be important)
+  const extractKeywords = (content: string): string[] => {
+    // Remove hashtags first
+    const contentWithoutHashtags = getContentWithoutHashtags(content);
+    
+    // Simple keyword extraction - you could enhance this
+    const words = contentWithoutHashtags.split(/\s+/);
+    const stopWords = ['the', 'and', 'for', 'with', 'this', 'that', 'your', 'about', 'have', 'from'];
+    const importantWords = words.filter(word => 
+      word.length > 5 && 
+      !stopWords.includes(word.toLowerCase())
+    );
+    
+    // Return unique words, limited to 5
+    return [...new Set(importantWords)].slice(0, 5);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100 dark:from-gray-900 dark:to-purple-900 p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
@@ -209,9 +239,46 @@ export default function Home() {
               </div>
             </div>
             
-            <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg mb-6">
-              <p className="text-gray-800 dark:text-gray-100 whitespace-pre-line">{generatedContent}</p>
+            {/* Main Content */}
+            <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg mb-4">
+              <p className="text-gray-800 dark:text-gray-100 whitespace-pre-line text-lg">
+                {getContentWithoutHashtags(generatedContent)}
+              </p>
             </div>
+            
+            {/* Hashtags Section */}
+            {extractHashtags(generatedContent).length > 0 && (
+              <div className="mb-4">
+                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Hashtags</h3>
+                <div className="flex flex-wrap gap-2">
+                  {extractHashtags(generatedContent).map((hashtag: string, index: number) => (
+                    <span 
+                      key={index}
+                      className="px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded-full text-sm"
+                    >
+                      {hashtag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Keywords Section */}
+            {extractKeywords(generatedContent).length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Keywords</h3>
+                <div className="flex flex-wrap gap-2">
+                  {extractKeywords(generatedContent).map((keyword: string, index: number) => (
+                    <span 
+                      key={index}
+                      className="px-3 py-1 bg-pink-100 dark:bg-pink-900 text-pink-800 dark:text-pink-200 rounded-full text-sm"
+                    >
+                      {keyword}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             
             <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
               <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4 flex items-center">
@@ -227,12 +294,14 @@ export default function Home() {
                   <p className="text-gray-600 dark:text-gray-300">Generating your visual...</p>
                 </div>
               ) : generatedImage ? (
-                <div>
-                  <img 
-                    src={generatedImage} 
-                    alt="Generated for social media" 
-                    className="w-full h-auto rounded-lg shadow-md mb-4"
-                  />
+                <div className="space-y-4">
+                  <div className="flex justify-center">
+                    <img 
+                      src={generatedImage} 
+                      alt="Generated for social media" 
+                      className="max-w-full h-auto rounded-lg shadow-md max-h-80 object-contain"
+                    />
+                  </div>
                   <div className="flex justify-end space-x-3">
                     <button
                       onClick={downloadImage}
