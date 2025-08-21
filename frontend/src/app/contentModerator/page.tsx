@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useState, useMemo } from "react";
 
 type Decision = {
   status: "approved" | "rejected";
@@ -12,11 +12,15 @@ type Decision = {
 
 const API = process.env.NEXT_PUBLIC_API_BASE; // e.g. http://localhost:8000/api
 
-const banned = ["hate", "kill", "racist", "sexist", "terror", "suicide"];
-const negWords = ["awful","stupid","idiot","trash","disgusting","dumb","sucks","hate","kill"];
-const posWords = ["love","great","awesome","kind","thanks","amazing","cool","happy","inspiring"];
 
-function clamp(n: number, min = 0, max = 1) { return Math.max(min, Math.min(max, n)); }
+
+const banned = ["hate", "kill", "racist", "sexist", "terror", "suicide"];
+const negWords = ["awful", "stupid", "idiot", "trash", "disgusting", "dumb", "sucks", "hate", "kill"];
+const posWords = ["love", "great", "awesome", "kind", "thanks", "amazing", "cool", "happy", "inspiring"];
+
+function clamp(n: number, min = 0, max = 1) {
+  return Math.max(min, Math.min(max, n));
+}
 
 function mockModerate(caption: string): Decision {
   const text = caption.toLowerCase();
@@ -104,20 +108,16 @@ export default function ContentModeratorPage() {
     }
 
     try {
-      const path = autoForward ? "/moderator/review-and-forward" : "/moderator/review";
+      const path = autoForward ? "/moderator/review_and_forward" : "/moderator/review";
+
       const res = await fetch(`${API}${path}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          // Add Authorization if you use JWT later:
-          // Authorization: `Bearer ${process.env.NEXT_PUBLIC_AUTH_TOKEN}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
       setDecision(data);
     } catch {
-      // fallback to mock if backend is down
       setDecision(mockModerate(payload.caption));
     } finally {
       setLoading(false);
@@ -147,7 +147,7 @@ export default function ContentModeratorPage() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Review Draft</h2>
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" className="accent-cyan-400" checked={autoForward} onChange={e=>setAutoForward(e.target.checked)} />
+              <input type="checkbox" className="accent-cyan-400" checked={autoForward} onChange={e => setAutoForward(e.target.checked)} />
               Auto-forward to Scheduler on approval
             </label>
           </div>
@@ -169,8 +169,8 @@ export default function ContentModeratorPage() {
             <div className="flex items-center gap-3">
               <select
                 value={platform}
-                onChange={(e)=>setPlatform(e.target.value)}
-                className="rounded-xl border border-white/20 bg-white/5 p-2 outline-none"
+                onChange={(e) => setPlatform(e.target.value)}
+                className="rounded-xl border border-white/20 bg-white/5 p-2 outline-none text-black"
               >
                 <option value="instagram">Instagram</option>
                 <option value="twitter">Twitter/X</option>
@@ -180,18 +180,9 @@ export default function ContentModeratorPage() {
               </select>
 
               <div className="ml-auto flex gap-2 text-xs">
-                <button
-                  onClick={()=>setCaption(samples.safe)}
-                  className="px-3 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/30 hover:bg-emerald-500/30"
-                >Load Safe</button>
-                <button
-                  onClick={()=>setCaption(samples.toxic)}
-                  className="px-3 py-1 rounded-lg bg-amber-500/20 border border-amber-400/30 hover:bg-amber-500/30"
-                >Load Toxic</button>
-                <button
-                  onClick={()=>setCaption(samples.banned)}
-                  className="px-3 py-1 rounded-lg bg-rose-500/20 border border-rose-400/30 hover:bg-rose-500/30"
-                >Load Banned</button>
+                <button onClick={() => setCaption(samples.safe)} className="px-3 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/30 hover:bg-emerald-500/30">Load Safe</button>
+                <button onClick={() => setCaption(samples.toxic)} className="px-3 py-1 rounded-lg bg-amber-500/20 border border-amber-400/30 hover:bg-amber-500/30">Load Toxic</button>
+                <button onClick={() => setCaption(samples.banned)} className="px-3 py-1 rounded-lg bg-rose-500/20 border border-rose-400/30 hover:bg-rose-500/30">Load Banned</button>
               </div>
             </div>
 
@@ -217,8 +208,8 @@ export default function ContentModeratorPage() {
             <div className="space-y-4">
               <div className={`rounded-xl p-4 border ${
                 decision.status === "approved"
-                ? "bg-emerald-500/10 border-emerald-500/30"
-                : "bg-rose-500/10 border-rose-500/30"
+                  ? "bg-emerald-500/10 border-emerald-500/30"
+                  : "bg-rose-500/10 border-rose-500/30"
               }`}>
                 <div className="flex items-center justify-between">
                   <div className="text-sm">
@@ -242,9 +233,15 @@ export default function ContentModeratorPage() {
               )}
 
               {decision.signals && (
-                <div className="grid gap-3">
-                  <SignalBar label="Toxicity" value={decision.signals.toxicity ?? decision.signals["toxicity_score"] ?? 0} />
-                  <SignalBar label="Polarity (neg→pos mapped)" value={( (decision.signals.polarity ?? 0) + 1 )/2} />
+                <div className="grid gap-4">
+                  <SignalBar label="Toxicity" value={decision.signals.toxicity ?? 0} />
+                  <SignalBar label="Polarity (neg→pos)" value={((decision.signals.polarity ?? 0) + 1) / 2} />
+                  <SignalBar label="Cyberbullying Risk" value={decision.signals.cyberbullying ?? 0} />
+                  <SignalBar label="Profanity Intensity" value={decision.signals.profanity ?? 0} />
+                  <SignalBar label="Spam Score" value={decision.signals.spam ?? 0} />
+                  <SignalBar label="Length Score" value={decision.signals.length ?? 0} />
+                  <SignalBar label="Hashtag Density" value={decision.signals.hashtags ?? 0} />
+                  <SignalBar label="Emoji Ratio" value={decision.signals.emoji_ratio ?? 0} />
                 </div>
               )}
 
