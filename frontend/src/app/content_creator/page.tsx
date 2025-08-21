@@ -1,8 +1,11 @@
 'use client'
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
+  const router = useRouter();
+
   const [topic, setTopic] = useState("");
   const [platform, setPlatform] = useState("general");
   const [tone, setTone] = useState("professional");
@@ -97,34 +100,46 @@ export default function Home() {
     }
   };
 
-  // Function to extract hashtags from content
+  // Function to extract hashtags
   const extractHashtags = (content: string): string[] => {
     const hashtagRegex = /#\w+/g;
     const matches = content.match(hashtagRegex);
     return matches ? matches : [];
   };
 
-  // Function to extract content without hashtags
+  // Function to remove hashtags
   const getContentWithoutHashtags = (content: string): string => {
     const hashtagRegex = /#\w+/g;
     return content.replace(hashtagRegex, '').trim();
   };
 
-  // Function to extract suggested keywords (non-hashtag words that might be important)
+  // Simple keyword extraction
   const extractKeywords = (content: string): string[] => {
-    // Remove hashtags first
     const contentWithoutHashtags = getContentWithoutHashtags(content);
-    
-    // Simple keyword extraction - you could enhance this
     const words = contentWithoutHashtags.split(/\s+/);
     const stopWords = ['the', 'and', 'for', 'with', 'this', 'that', 'your', 'about', 'have', 'from'];
     const importantWords = words.filter(word => 
       word.length > 5 && 
       !stopWords.includes(word.toLowerCase())
     );
-    
-    // Return unique words, limited to 5
     return [...new Set(importantWords)].slice(0, 5);
+  };
+
+  // 🔹 Navigate to moderator page with generated content
+  const goToModerator = () => {
+    if (!generatedContent) {
+      setError("Please generate content first!");
+      return;
+    }
+
+    // Pass generatedContent via query param (or localStorage if bigger)
+    const query = new URLSearchParams({
+      caption: generatedContent,
+      hashtags: extractHashtags(generatedContent).join(","),
+      platform
+    }).toString();
+
+    router.push(`/contentModerator?${query}`);
   };
 
   return (
@@ -151,7 +166,7 @@ export default function Home() {
                 type="text"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                placeholder="Enter your topic (e.g., summer fashion, tech news, healthy recipes)..."
+                placeholder="Enter your topic..."
                 className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white bg-white dark:bg-gray-700 focus:ring-2 focus:ring-purple-400 focus:outline-none transition"
               />
             </div>
@@ -199,17 +214,7 @@ export default function Home() {
             disabled={loading}
             className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-500 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-pink-600 active:scale-95 transform transition disabled:opacity-50 flex items-center justify-center"
           >
-            {loading ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Generating...
-              </>
-            ) : (
-              'Generate Content'
-            )}
+            {loading ? "Generating..." : "Generate Content"}
           </button>
         </div>
 
@@ -228,7 +233,6 @@ export default function Home() {
                 <span className="mr-2">📝</span> Generated Content
               </h2>
               <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-500 dark:text-gray-400">{new Date().toLocaleTimeString()}</span>
                 <button
                   onClick={copyToClipboard}
                   className="p-2 text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 transition"
@@ -239,60 +243,30 @@ export default function Home() {
               </div>
             </div>
             
-            {/* Main Content */}
             <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg mb-4">
               <p className="text-gray-800 dark:text-gray-100 whitespace-pre-line text-lg">
                 {getContentWithoutHashtags(generatedContent)}
               </p>
             </div>
-            
-            {/* Hashtags Section */}
-            {extractHashtags(generatedContent).length > 0 && (
-              <div className="mb-4">
-                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Hashtags</h3>
-                <div className="flex flex-wrap gap-2">
-                  {extractHashtags(generatedContent).map((hashtag: string, index: number) => (
-                    <span 
-                      key={index}
-                      className="px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded-full text-sm"
-                    >
-                      {hashtag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            {/* Keywords Section */}
-            {extractKeywords(generatedContent).length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Keywords</h3>
-                <div className="flex flex-wrap gap-2">
-                  {extractKeywords(generatedContent).map((keyword: string, index: number) => (
-                    <span 
-                      key={index}
-                      className="px-3 py-1 bg-pink-100 dark:bg-pink-900 text-pink-800 dark:text-pink-200 rounded-full text-sm"
-                    >
-                      {keyword}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            
+
+            {/* 🔹 Navigate to Moderator Page */}
+            <div className="mt-4">
+              <button
+                onClick={goToModerator}
+                className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700"
+              >
+                Moderate this Content
+              </button>
+            </div>
+
+            {/* existing image section unchanged */}
             <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
               <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4 flex items-center">
                 <span className="mr-2">🖼️</span> Visual Content
               </h3>
               
               {imageLoading ? (
-                <div className="flex flex-col items-center justify-center p-8 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                  <svg className="animate-spin h-8 w-8 text-purple-600 mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  <p className="text-gray-600 dark:text-gray-300">Generating your visual...</p>
-                </div>
+                <p className="text-gray-600 dark:text-gray-300">Generating your visual...</p>
               ) : generatedImage ? (
                 <div className="space-y-4">
                   <div className="flex justify-center">
