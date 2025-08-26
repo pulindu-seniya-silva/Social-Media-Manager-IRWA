@@ -9,12 +9,19 @@ export default function Home() {
   const [topic, setTopic] = useState("");
   const [platform, setPlatform] = useState("general");
   const [tone, setTone] = useState("professional");
+  const [wordLimit, setWordLimit] = useState<number | ''>(''); // 🔹 NEW (empty = no limit)
+
   const [generatedContent, setGeneratedContent] = useState("");
   const [generatedImage, setGeneratedImage] = useState("");
   const [loading, setLoading] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+
+  // 🔹 NEW: server-generated lists (optional)
+  const [serverHashtags, setServerHashtags] = useState<string[]>([]);
+  const [serverKeywords, setServerKeywords] = useState<string[]>([]);
+  const [hkLoading, setHKLoading] = useState<{tags:boolean; kws:boolean}>({tags:false, kws:false});
 
   const handleGenerate = async () => {
     if (!topic.trim()) {
@@ -27,6 +34,8 @@ export default function Home() {
     setGeneratedImage("");
     setError("");
     setCopied(false);
+    setServerHashtags([]);
+    setServerKeywords([]);
 
     try {
       const res = await fetch("http://127.0.0.1:8000/content/generate-content", {
@@ -35,7 +44,8 @@ export default function Home() {
         body: JSON.stringify({ 
           topic,
           platform,
-          tone 
+          tone,
+          word_limit: wordLimit === '' ? null : Number(wordLimit), // 🔹 send only if set
         }),
       });
 
@@ -50,6 +60,58 @@ export default function Home() {
       setError("Failed to generate content. Please try again.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGenerateHashtags = async () => {
+    if (!topic.trim() && !generatedContent.trim()) {
+      setError("Provide a topic or generate content first to suggest hashtags.");
+      return;
+    }
+    setHKLoading(s => ({...s, tags:true}));
+    setServerHashtags([]);
+    try {
+      const res = await fetch("http://127.0.0.1:8000/content/generate-hashtags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic,
+          content: generatedContent,
+          platform,
+        }),
+      });
+      const data = await res.json();
+      if (Array.isArray(data.hashtags)) setServerHashtags(data.hashtags);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setHKLoading(s => ({...s, tags:false}));
+    }
+  };
+
+  const handleGenerateKeywords = async () => {
+    if (!topic.trim() && !generatedContent.trim()) {
+      setError("Provide a topic or generate content first to suggest keywords.");
+      return;
+    }
+    setHKLoading(s => ({...s, kws:true}));
+    setServerKeywords([]);
+    try {
+      const res = await fetch("http://127.0.0.1:8000/content/generate-keywords", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic,
+          content: generatedContent,
+          platform,
+        }),
+      });
+      const data = await res.json();
+      if (Array.isArray(data.keywords)) setServerKeywords(data.keywords);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setHKLoading(s => ({...s, kws:false}));
     }
   };
 
@@ -100,11 +162,12 @@ export default function Home() {
     }
   };
 
-  // Function to extract hashtags
+  // Function to extract hashtags (fallback)
   const extractHashtags = (content: string): string[] => {
     const hashtagRegex = /#\w+/g;
     const matches = content.match(hashtagRegex);
-    return matches ? matches : [];
+    // normalize to list without '#'
+    return matches ? [...new Set(matches.map(h => h.slice(1).toLowerCase()))] : [];
   };
 
   // Function to remove hashtags
@@ -113,7 +176,7 @@ export default function Home() {
     return content.replace(hashtagRegex, '').trim();
   };
 
-  // Simple keyword extraction
+  // Simple keyword extraction (fallback)
   const extractKeywords = (content: string): string[] => {
     const contentWithoutHashtags = getContentWithoutHashtags(content);
     const words = contentWithoutHashtags.split(/\s+/);
@@ -122,8 +185,12 @@ export default function Home() {
       word.length > 5 && 
       !stopWords.includes(word.toLowerCase())
     );
-    return [...new Set(importantWords)].slice(0, 5);
+    return [...new Set(importantWords.map(w => w.toLowerCase()))].slice(0, 5);
   };
+
+  // Prefer server-generated; fallback to client extraction
+  const displayHashtags = serverHashtags.length ? serverHashtags : extractHashtags(generatedContent);
+  const displayKeywords = serverKeywords.length ? serverKeywords : extractKeywords(generatedContent);
 
   // 🔹 Navigate to moderator page with generated content
   const goToModerator = () => {
@@ -132,10 +199,12 @@ export default function Home() {
       return;
     }
 
-    // Pass generatedContent via query param (or localStorage if bigger)
+    // use server-generated hashtags if available
+    const tags = displayHashtags.join(",");
+
     const query = new URLSearchParams({
       caption: generatedContent,
-      hashtags: extractHashtags(generatedContent).join(","),
+      hashtags: tags,
       platform
     }).toString();
 
@@ -189,24 +258,22 @@ export default function Home() {
               </select>
             </div>
           </div>
-          
+
+          {/* 🔹 NEW: Word limit control (does not change any other logic) */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Tone
+              Word Limit (optional)
             </label>
-            <div className="flex flex-wrap gap-3">
-              {['professional', 'casual', 'funny', 'inspirational', 'urgent'].map((toneOption) => (
-                <button
-                  key={toneOption}
-                  onClick={() => setTone(toneOption)}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition ${tone === toneOption 
-                    ? 'bg-purple-600 text-white' 
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-purple-100 dark:hover:bg-purple-800'}`}
-                >
-                  {toneOption.charAt(0).toUpperCase() + toneOption.slice(1)}
-                </button>
-              ))}
-            </div>
+            <input
+              type="number"
+              min={10}
+              max={300}
+              value={wordLimit}
+              onChange={(e) => setWordLimit(e.target.value === '' ? '' : Number(e.target.value))}
+              placeholder="e.g., 80"
+              className="w-40 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white bg-white dark:bg-gray-700 focus:ring-2 focus:ring-purple-400 focus:outline-none transition"
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Leave empty to let the model decide.</p>
           </div>
           
           <button
@@ -243,13 +310,66 @@ export default function Home() {
               </div>
             </div>
             
+            {/* Main Content */}
             <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg mb-4">
               <p className="text-gray-800 dark:text-gray-100 whitespace-pre-line text-lg">
                 {getContentWithoutHashtags(generatedContent)}
               </p>
             </div>
 
-            {/* 🔹 Navigate to Moderator Page */}
+            {/* 🔹 NEW buttons: generate hashtags / keywords */}
+            <div className="flex flex-wrap gap-3 mb-4">
+              <button
+                onClick={handleGenerateHashtags}
+                disabled={hkLoading.tags}
+                className="px-4 py-2 bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-100 rounded-lg hover:bg-purple-200 dark:hover:bg-purple-800"
+              >
+                {hkLoading.tags ? "Generating Hashtags…" : "Generate Hashtags"}
+              </button>
+              <button
+                onClick={handleGenerateKeywords}
+                disabled={hkLoading.kws}
+                className="px-4 py-2 bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-100 rounded-lg hover:bg-pink-200 dark:hover:bg-pink-800"
+              >
+                {hkLoading.kws ? "Generating Keywords…" : "Generate Keywords"}
+              </button>
+            </div>
+
+            {/* Hashtags Section (prefers server, falls back to client) */}
+            {displayHashtags.length > 0 && (
+              <div className="mb-4">
+                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Hashtags</h3>
+                <div className="flex flex-wrap gap-2">
+                  {displayHashtags.map((tag: string, index: number) => (
+                    <span 
+                      key={index}
+                      className="px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded-full text-sm"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Keywords Section (prefers server, falls back to client) */}
+            {displayKeywords.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Keywords</h3>
+                <div className="flex flex-wrap gap-2">
+                  {displayKeywords.map((keyword: string, index: number) => (
+                    <span 
+                      key={index}
+                      className="px-3 py-1 bg-pink-100 dark:bg-pink-900 text-pink-800 dark:text-pink-200 rounded-full text-sm"
+                    >
+                      {keyword}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Navigate to Moderator */}
             <div className="mt-4">
               <button
                 onClick={goToModerator}
@@ -259,7 +379,7 @@ export default function Home() {
               </button>
             </div>
 
-            {/* existing image section unchanged */}
+            {/* Visual Content (unchanged) */}
             <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
               <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4 flex items-center">
                 <span className="mr-2">🖼️</span> Visual Content
@@ -296,7 +416,7 @@ export default function Home() {
                   onClick={handleGenerateImage}
                   className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-400 text-white font-semibold rounded-lg hover:from-purple-600 hover:to-pink-500 flex items-center justify-center"
                 >
-                  <span className="mr-2">✨</span> Generate Matching Visual
+                  <span className="mr-2">✨</span> Generate Matching Visual image
                 </button>
               )}
             </div>
