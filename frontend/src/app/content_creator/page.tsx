@@ -8,7 +8,7 @@ export default function Home() {
 
   const [topic, setTopic] = useState("");
   const [platform, setPlatform] = useState("general");
-  const [tone, setTone] = useState("professional");
+  const [tone] = useState("professional");
   const [wordLimit, setWordLimit] = useState<number | ''>(''); // 🔹 NEW (empty = no limit)
 
   const [generatedContent, setGeneratedContent] = useState("");
