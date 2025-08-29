@@ -32,3 +32,10 @@ app.add_middleware(SlowAPIMiddleware)
 def health(): return {"ok": True}
 
 app.include_router(api_router, prefix="/api")
+
+#mongodb database routes - added by pulindu
+from app.routes.chat_routes import router as chat_router
+app.include_router(chat_router)
+
+
+
