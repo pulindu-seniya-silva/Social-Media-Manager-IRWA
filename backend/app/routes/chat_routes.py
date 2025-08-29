@@ -1,5 +1,5 @@
 # chat_routes.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from bson import ObjectId
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -40,7 +40,10 @@ def to_msg_out(doc: Dict[str, Any]) -> MessageOut:
     )
 
 @router.post("/conversations", response_model=ConversationOut, status_code=201)
-async def create_conversation(payload: ConversationCreate, db: AsyncIOMotorDatabase = Depends(get_db)):
+async def create_conversation(
+    payload: ConversationCreate = Body(default=ConversationCreate()),   # 👈 default body
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
     now = datetime.utcnow()
     doc = {
         "title": payload.title or "Untitled Chat",

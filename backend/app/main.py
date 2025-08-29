@@ -1,16 +1,8 @@
+from dotenv import load_dotenv
+load_dotenv() 
 
-from app.routes import router
-
-app = FastAPI(title="Agentic AI System")
-app.include_router(router)
-
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.middleware import SlowAPIMiddleware
-
-from app.routes.routes import router as api_router
 
 app = FastAPI(title="IRWA SocialMediaManager – Content Moderator")
 
@@ -23,19 +15,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Tiny rate-limit
-limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
-app.state.limiter = limiter
-app.add_middleware(SlowAPIMiddleware)
-
-@app.get("/health")
-def health(): return {"ok": True}
-
-app.include_router(api_router, prefix="/api")
-
-#mongodb database routes - added by pulindu
+# MongoDB database routes - added by pulindu
 from app.routes.chat_routes import router as chat_router
 app.include_router(chat_router)
 
+from app.agents.content_creator import router as content_creator_router
+app.include_router(content_creator_router, prefix="/content")
 
-
+from app.agents.content_moderator import router as content_moderator_router
+app.include_router(content_moderator_router, prefix="/moderator")
