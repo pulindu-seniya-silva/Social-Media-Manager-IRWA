@@ -163,15 +163,18 @@ export default function Home() {
   };
 
   // Function to extract hashtags (fallback)
-  const extractHashtags = (content: string): string[] => {
+ // Function to extract hashtags (safe)
+  const extractHashtags = (content?: string): string[] => {
+    if (!content) return [];
     const hashtagRegex = /#\w+/g;
     const matches = content.match(hashtagRegex);
-    // normalize to list without '#'
     return matches ? [...new Set(matches.map(h => h.slice(1).toLowerCase()))] : [];
   };
 
   // Function to remove hashtags
-  const getContentWithoutHashtags = (content: string): string => {
+ // Function to remove hashtags (safe)
+  const getContentWithoutHashtags = (content?: string): string => {
+    if (!content) return "";
     const hashtagRegex = /#\w+/g;
     return content.replace(hashtagRegex, '').trim();
   };

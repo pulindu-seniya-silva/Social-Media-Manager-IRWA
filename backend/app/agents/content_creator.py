@@ -10,16 +10,16 @@ from dotenv import load_dotenv
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-app = FastAPI(title="Social Media Content Generator Pro")
+#app = FastAPI(title="Social Media Content Generator Pro")
 
-origins = ["http://localhost:3000"]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+#origins = ["http://localhost:3000"]
+#app.add_middleware(
+#    CORSMiddleware,
+#    allow_origins=origins,
+#    allow_credentials=True,
+#    allow_methods=["*"],
+#    allow_headers=["*"],
+#) 
 
 class ContentRequest(BaseModel):
     topic: str
@@ -213,9 +213,9 @@ async def generate_image(req: ImageRequest):
         except Exception as e2:
             return {"error": f"Error generating image: {str(e2)}"}
 
-app.include_router(router, prefix="/content")
+#app.include_router(router, prefix="/content")
 
-# (kept as-is to not change your existing structure)
-@app.post("/content/generate-image")
-async def generate_image(request: ImageRequest):
-  return {"image_url": "..."}
+
+#mongodb database routes - added by pulindu
+#from app.routes.chat_routes import router as chat_router
+#app.include_router(chat_router)
