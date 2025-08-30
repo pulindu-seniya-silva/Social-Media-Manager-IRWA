@@ -41,13 +41,13 @@ def to_msg_out(doc: Dict[str, Any]) -> MessageOut:
 
 @router.post("/conversations", response_model=ConversationOut, status_code=201)
 async def create_conversation(
-    payload: ConversationCreate = Body(default=ConversationCreate()),   # 👈 default body
+    payload: Optional[ConversationCreate] = Body(default=None),  # ✅ allow {}
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
     now = datetime.utcnow()
     doc = {
-        "title": payload.title or "Untitled Chat",
-        "participants": payload.participants or ["user","assistant"],
+        "title": (payload.title if payload and payload.title else "Untitled Chat"),
+        "participants": (payload.participants if payload and payload.participants else ["user","assistant"]),
         "status": "active",
         "lastMessageAt": now,
         "createdAt": now,
