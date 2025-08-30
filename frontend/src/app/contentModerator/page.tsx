@@ -87,18 +87,25 @@ export default function ContentModeratorPage() {
   // ✅ chat logging state (INSIDE component)
   const [conversationId, setConversationId] = useState<string | null>(null);
 
-  // ✅ create conversation once
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`${CHAT_BASE}/chat/conversations`, { method: "POST" });
-        const data = await res.json();
-        if (data?.id) setConversationId(data.id);
-      } catch (e) {
-        console.warn("Could not create conversation:", e);
+  (async () => {
+    try {
+      const res = await fetch(`${CHAT_BASE}/chat/conversations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})             // 👈 important to avoid 422
+      });
+      const data = await res.json();
+      if (data?.id) {
+        setConversationId(data.id);
+      } else {
+        console.warn("Create conversation failed:", data);
       }
-    })();
-  }, []);
+    } catch (e) {
+      console.warn("Could not create conversation:", e);
+    }
+  })();
+}, []);
 
   // ✅ helper to save a message
   async function saveMessage(role: "user" | "assistant" | "system" | "tool", content: string) {
