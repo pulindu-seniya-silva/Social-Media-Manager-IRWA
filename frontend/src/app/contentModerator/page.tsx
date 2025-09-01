@@ -2,7 +2,6 @@
 export const dynamic = "force-dynamic";
 
 import React, { useState, useMemo, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
 
 type Decision = {
   status: "approved" | "rejected";
@@ -75,8 +74,6 @@ function SignalBar({ label, value }: { label: string; value: number }) {
 }
 
 export default function ContentModeratorPage() {
-  const searchParams = useSearchParams();
-
   const [caption, setCaption] = useState("");
   const [hashtags, setHashtags] = useState("");
   const [platform, setPlatform] = useState("instagram");
@@ -84,28 +81,19 @@ export default function ContentModeratorPage() {
   const [decision, setDecision] = useState<Decision | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // ✅ chat logging state (INSIDE component)
   const [conversationId, setConversationId] = useState<string | null>(null);
 
+  // ✅ pre-fill from query parameters safely
   useEffect(() => {
-  (async () => {
-    try {
-      const res = await fetch(`${CHAT_BASE}/chat/conversations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({})             // 👈 important to avoid 422
-      });
-      const data = await res.json();
-      if (data?.id) {
-        setConversationId(data.id);
-      } else {
-        console.warn("Create conversation failed:", data);
-      }
-    } catch (e) {
-      console.warn("Could not create conversation:", e);
-    }
-  })();
-}, []);
+    const params = new URLSearchParams(window.location.search);
+    const qCaption = params.get("caption");
+    const qHashtags = params.get("hashtags");
+    const qPlatform = params.get("platform");
+
+    if (qCaption) setCaption(qCaption);
+    if (qHashtags) setHashtags(qHashtags);
+    if (qPlatform) setPlatform(qPlatform);
+  }, []);
 
   // ✅ helper to save a message
   async function saveMessage(role: "user" | "assistant" | "system" | "tool", content: string) {
@@ -129,22 +117,10 @@ export default function ContentModeratorPage() {
     banned: "We should kill negativity with positivity. #motivation"
   }), []);
 
-  // pre-fill from query
-  useEffect(() => {
-    const qCaption = searchParams.get("caption");
-    const qHashtags = searchParams.get("hashtags");
-    const qPlatform = searchParams.get("platform");
-
-    if (qCaption) setCaption(qCaption);
-    if (qHashtags) setHashtags(qHashtags);
-    if (qPlatform) setPlatform(qPlatform);
-  }, [searchParams]);
-
   const review = async () => {
     setLoading(true);
     setDecision(null);
 
-    // ✅ log user's caption first
     await saveMessage("user", caption);
 
     const payload = {
@@ -155,7 +131,7 @@ export default function ContentModeratorPage() {
     };
 
     try {
-      let data: any;
+      let data: Decision | string;
       if (!API) {
         await new Promise(r => setTimeout(r, 300));
         data = mockModerate(payload.caption);
@@ -169,9 +145,8 @@ export default function ContentModeratorPage() {
         data = await res.json();
       }
 
-      setDecision(data);
+      setDecision(typeof data === "string" ? null : data);
 
-      // ✅ log assistant summary
       const summary =
         typeof data === "string"
           ? data
@@ -271,11 +246,7 @@ export default function ContentModeratorPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className={`rounded-xl p-4 border ${
-                decision.status === "approved"
-                  ? "bg-emerald-500/10 border-emerald-500/30"
-                  : "bg-rose-500/10 border-rose-500/30"
-              }`}>
+              <div className={`rounded-xl p-4 border ${decision.status === "approved" ? "bg-emerald-500/10 border-emerald-500/30" : "bg-rose-500/10 border-rose-500/30"}`}>
                 <div className="flex items-center justify-between">
                   <div className="text-sm">
                     <div className="uppercase tracking-wide text-white/70">Status</div>
