@@ -11,7 +11,7 @@ type ChatMessage = {
   createdAt: string;
   updatedAt: string;
   seq?: number | null;
-  metadata?: Record<string, any> | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 const CHAT_BASE = process.env.NEXT_PUBLIC_CHAT_BASE || 'http://127.0.0.1:8000';
