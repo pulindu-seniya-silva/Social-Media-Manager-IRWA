@@ -1,26 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { PenTool, ShieldCheck, CalendarClock, BarChart3 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { PenTool, ShieldCheck, CalendarClock, BarChart3, X } from "lucide-react";
+import dynamic from "next/dynamic";
+
+// IMPORTANT: dynamically import to avoid any SSR hiccups with framer-motion
+const ArchitectureFlow = dynamic(() => import("../../components/ArchitectureFlow"), { ssr: false });
 
 export default function Home() {
+  const [showFlow, setShowFlow] = useState(false);
+
+  // optional: lock background scroll when modal is open
+  useEffect(() => {
+    if (showFlow) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => { document.body.style.overflow = prev; };
+    }
+  }, [showFlow]);
+
   return (
     <div className="font-sans flex flex-col min-h-screen bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-900 dark:to-gray-800 text-gray-900 dark:text-gray-100 scroll-smooth">
       {/* Header */}
       <header className="w-full sticky top-0 z-50 bg-white/80 dark:bg-gray-800/80 shadow-sm backdrop-blur">
         <nav className="max-w-6xl mx-auto flex items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-2 group">
-            <span className="text-2xl">🚀</span>
-            <span className="font-extrabold tracking-tight text-xl group-hover:opacity-90">
-              Social Media Manager
-            </span>
           </Link>
-          <ul className="flex items-center gap-6 text-sm font-medium">
-            <li><Link href="/content_creator"   className="hover:text-blue-600">Content Creator</Link></li>
-            <li><Link href="/contentModerator" className="hover:text-blue-600">Content Moderator</Link></li>
-            <li><Link href="#scheduler" className="hover:text-blue-600">Post Scheduler</Link></li>
-            <li><Link href="#analyzer"  className="hover:text-blue-600">Engagement Analyzer</Link></li>
-          </ul>
         </nav>
       </header>
 
@@ -47,23 +53,26 @@ export default function Home() {
               <span className="font-semibold">analyze</span> content across platforms — all in one place.
             </p>
             <div className="mt-8 flex items-center justify-center gap-4">
+              {/* Keep as Link if you want to jump to creator section */}
               <Link
                 href="#creator"
                 className="px-6 py-3 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 transition"
               >
                 Get Started
               </Link>
-              <Link
-                href="#features"
+
+              {/* Modal trigger as button (not Link) to avoid nested <a> issues */}
+              <button
+                onClick={() => setShowFlow(true)}
                 className="px-6 py-3 rounded-xl bg-white/70 dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-semibold hover:bg-white/90 dark:hover:bg-gray-600 transition"
               >
                 Explore Features
-              </Link>
+              </button>
             </div>
           </div>
         </section>
 
-        {/* Features Grid */}
+        {/* Features Grid (unchanged) */}
         <section id="features" className="max-w-6xl mx-auto px-6 pb-20">
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Content Creator */}
@@ -141,10 +150,34 @@ export default function Home() {
         </section>
       </main>
 
-      {/* Footer */}
-      <footer className="text-center py-6 text-sm text-gray-600 dark:text-gray-400">
-        © {new Date().getFullYear()} Social Media Manager.
-      </footer>
+      {/* ===== Modal for ArchitectureFlow ===== */}
+      {showFlow && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          {/* backdrop */}
+          <button
+            aria-label="Close overlay"
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowFlow(false)}
+          />
+          {/* content */}
+          <div className="relative w-full max-w-6xl rounded-3xl border border-gray-700/50 bg-gray-900 shadow-2xl">
+            <button
+              onClick={() => setShowFlow(false)}
+              className="absolute right-3 top-3 inline-flex items-center justify-center h-10 w-10 rounded-xl bg-white/10 hover:bg-white/20 text-white"
+              aria-label="Close"
+              title="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            {/* animated flow inside */}
+            <ArchitectureFlow />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
