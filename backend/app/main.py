@@ -1,34 +1,40 @@
-
-from app.routes import router
-
-app = FastAPI(title="Agentic AI System")
-app.include_router(router)
-
-from fastapi import FastAPI, Request
+# backend/app/main.py
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.middleware import SlowAPIMiddleware
 
-from app.routes.routes import router as api_router
+# ✅ Import routers directly from their files (modules)
+# from app.routes import router as api_router
+from app.routes.post_scheduler_routes import router as post_scheduler_router
 
-app = FastAPI(title="IRWA SocialMediaManager – Content Moderator")
+app = FastAPI(title="IRWA SocialMediaManager")
 
-# CORS (Frontend origin)
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Tiny rate-limit
+# Rate limiting (optional)
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
 @app.get("/health")
-def health(): return {"ok": True}
+def health():
+    return {"ok": True, "service": "IRWA backend"}
 
-app.include_router(api_router, prefix="/api")
+# Mount routers
+# app.include_router(api_router, prefix="/api")
+app.include_router(post_scheduler_router)

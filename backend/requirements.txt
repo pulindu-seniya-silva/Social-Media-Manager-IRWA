@@ -3,3 +3,9 @@ uvicorn
 pyjwt
 httpx
 slowapi
+pydantic-settings
+pandas 
+numpy 
+python-dateutil 
+openpyxl
+openai
