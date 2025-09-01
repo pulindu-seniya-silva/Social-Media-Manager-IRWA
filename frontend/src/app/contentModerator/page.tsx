@@ -165,14 +165,14 @@ export default function ContentModeratorPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white">
+    <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white">
       {/* header */}
-      <header className="max-w-6xl mx-auto px-6 py-10">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
+      <header className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight break-words">
             🛡️ Content Moderator <span className="opacity-70">/ Safety Guardian</span>
           </h1>
-          <div className="hidden md:flex gap-2">
+          <div className="flex flex-wrap gap-2 sm:justify-end">
             <Pill>App Router</Pill>
             <Pill>Next.js + Tailwind</Pill>
             <Pill>{API ? "API Mode" : "Mock Mode"}</Pill>
@@ -181,14 +181,14 @@ export default function ContentModeratorPage() {
       </header>
 
       {/* content */}
-      <main className="max-w-6xl mx-auto px-6 pb-16 grid md:grid-cols-2 gap-6">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-16 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
         {/* left: form */}
-        <section className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/10 shadow-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Review Draft</h2>
+        <section className="bg-white/10 backdrop-blur-xl rounded-2xl p-4 sm:p-6 border border-white/10 shadow-xl">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
+            <h2 className="text-base sm:text-lg font-semibold">Review Draft</h2>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" className="accent-cyan-400" checked={autoForward} onChange={e => setAutoForward(e.target.checked)} />
-              Auto-forward to Scheduler on approval
+              <span className="whitespace-nowrap">Auto-forward to Scheduler on approval</span>
             </label>
           </div>
 
@@ -206,11 +206,11 @@ export default function ContentModeratorPage() {
               placeholder="Hashtags (comma separated)"
               className="w-full rounded-xl border border-white/20 bg-white/5 p-3 outline-none focus:ring-2 focus:ring-cyan-400"
             />
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <select
                 value={platform}
                 onChange={(e) => setPlatform(e.target.value)}
-                className="rounded-xl border border-white/20 bg-white/5 p-2 outline-none text-black"
+                className="w-full sm:w-auto rounded-xl border border-white/20 bg-white/5 p-2 outline-none text-black"
               >
                 <option value="instagram">Instagram</option>
                 <option value="twitter">Twitter/X</option>
@@ -219,7 +219,7 @@ export default function ContentModeratorPage() {
                 <option value="facebook">Facebook</option>
               </select>
 
-              <div className="ml-auto flex gap-2 text-xs">
+              <div className="sm:ml-auto flex flex-wrap gap-2 text-xs">
                 <button onClick={() => setCaption(samples.safe)} className="px-3 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/30 hover:bg-emerald-500/30">Load Safe</button>
                 <button onClick={() => setCaption(samples.toxic)} className="px-3 py-1 rounded-lg bg-amber-500/20 border border-amber-400/30 hover:bg-amber-500/30">Load Toxic</button>
                 <button onClick={() => setCaption(samples.banned)} className="px-3 py-1 rounded-lg bg-rose-500/20 border border-rose-400/30 hover:bg-rose-500/30">Load Banned</button>
@@ -237,8 +237,8 @@ export default function ContentModeratorPage() {
         </section>
 
         {/* right: result */}
-        <section className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/10 shadow-xl">
-          <h2 className="text-lg font-semibold mb-4">Decision</h2>
+        <section className="bg-white/10 backdrop-blur-xl rounded-2xl p-4 sm:p-6 border border-white/10 shadow-xl">
+          <h2 className="text-base sm:text-lg font-semibold mb-4">Decision</h2>
 
           {!decision ? (
             <div className="text-white/70">
@@ -247,15 +247,15 @@ export default function ContentModeratorPage() {
           ) : (
             <div className="space-y-4">
               <div className={`rounded-xl p-4 border ${decision.status === "approved" ? "bg-emerald-500/10 border-emerald-500/30" : "bg-rose-500/10 border-rose-500/30"}`}>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="text-sm">
                     <div className="uppercase tracking-wide text-white/70">Status</div>
-                    <div className="text-xl font-bold">{decision.status}</div>
+                    <div className="text-xl font-bold break-words">{decision.status}</div>
                   </div>
                   {decision.reason && (
-                    <div className="text-sm max-w-xs text-right">
+                    <div className="text-sm sm:max-w-xs sm:text-right">
                       <div className="uppercase tracking-wide text-white/70">Reason</div>
-                      <div>{decision.reason}</div>
+                      <div className="break-words">{decision.reason}</div>
                     </div>
                   )}
                 </div>
@@ -264,12 +264,12 @@ export default function ContentModeratorPage() {
               {decision.cleaned_caption && (
                 <div className="bg-white/5 border border-white/10 rounded-xl p-4">
                   <div className="uppercase tracking-wide text-xs text-white/60 mb-1">Cleaned Caption</div>
-                  <p className="leading-relaxed">{decision.cleaned_caption}</p>
+                  <p className="leading-relaxed break-words">{decision.cleaned_caption}</p>
                 </div>
               )}
 
               {decision.signals && (
-                <div className="grid gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <SignalBar label="Toxicity" value={decision.signals.toxicity ?? 0} />
                   <SignalBar label="Polarity (neg→pos)" value={((decision.signals.polarity ?? 0) + 1) / 2} />
                   <SignalBar label="Cyberbullying Risk" value={decision.signals.cyberbullying ?? 0} />
@@ -284,8 +284,8 @@ export default function ContentModeratorPage() {
               {!!decision.explanations?.length && (
                 <div className="bg-white/5 border border-white/10 rounded-xl p-4">
                   <div className="uppercase tracking-wide text-xs text-white/60 mb-2">Explanations</div>
-                  <ul className="list-disc pl-6 space-y-1 text-sm">
-                    {decision.explanations.map((e, i) => <li key={i}>{e}</li>)}
+                  <ul className="list-disc pl-5 space-y-1 text-sm">
+                    {decision.explanations.map((e, i) => <li key={i} className="break-words">{e}</li>)}
                   </ul>
                 </div>
               )}
@@ -294,7 +294,7 @@ export default function ContentModeratorPage() {
         </section>
       </main>
 
-      <footer className="max-w-6xl mx-auto px-6 pb-10 text-sm text-white/50">
+      <footer className="max-w-6xl mx-auto px-4 sm:px-6 pb-10 text-sm text-white/50">
         Tip: Set <code className="bg-white/10 px-1 rounded">NEXT_PUBLIC_API_BASE</code> and <code className="bg-white/10 px-1 rounded">NEXT_PUBLIC_CHAT_BASE</code> in <code>.env.local</code>.
       </footer>
     </div>
