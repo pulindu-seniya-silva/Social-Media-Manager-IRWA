@@ -96,7 +96,6 @@ export default function ContentModeratorPage() {
 
       const data = (await res.json()) as Decision;
 
-      // Normalize optional fields from API
       setDecision({
         status: data.status,
         reason: data.reason ?? null,
@@ -104,8 +103,9 @@ export default function ContentModeratorPage() {
         signals: data.signals ?? null,
         explanations: data.explanations ?? null,
       });
-    } catch (e: any) {
-      setError(e?.message || "Unexpected error while moderating.");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Unexpected error while moderating.";
+      setError(message);
     } finally {
       setLoading(false);
     }
