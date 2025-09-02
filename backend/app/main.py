@@ -10,17 +10,17 @@ from slowapi.middleware import SlowAPIMiddleware
 # from app.routes import router as api_router
 from app.routes.post_scheduler_routes import router as post_scheduler_router
 
+from dotenv import load_dotenv
+load_dotenv() 
+
+
+
 app = FastAPI(title="IRWA SocialMediaManager")
 
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-    ],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -38,3 +38,13 @@ def health():
 # Mount routers
 # app.include_router(api_router, prefix="/api")
 app.include_router(post_scheduler_router)
+# MongoDB database routes - added by pulindu
+from app.routes.chat_routes import router as chat_router
+app.include_router(chat_router)
+
+from app.agents.content_creator import router as content_creator_router
+app.include_router(content_creator_router, prefix="/content")
+
+from app.agents.content_moderator import router as content_moderator_router
+app.include_router(content_moderator_router, prefix="/moderator")
+

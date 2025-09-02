@@ -3,6 +3,9 @@ uvicorn
 pyjwt
 httpx
 slowapi
+motor
+pymongo[srv]
+python-dotenv
 pydantic-settings
 pandas 
 numpy 

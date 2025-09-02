@@ -1,7 +1,7 @@
 "use client";
+export const dynamic = "force-dynamic";
 
 import React, { useState, useMemo, useEffect } from "react";
-import { useSearchParams } from "next/navigation"; // 🔹 ADDED
 
 type Decision = {
   status: "approved" | "rejected";
@@ -11,7 +11,8 @@ type Decision = {
   explanations?: string[];
 };
 
-const API = process.env.NEXT_PUBLIC_API_BASE; // e.g. http://localhost:8000/api
+const API = process.env.NEXT_PUBLIC_API_BASE; // e.g. http://127.0.0.1:8000
+const CHAT_BASE = process.env.NEXT_PUBLIC_CHAT_BASE || "http://127.0.0.1:8000";
 
 const banned = ["hate", "kill", "racist", "sexist", "terror", "suicide"];
 const negWords = ["awful", "stupid", "idiot", "trash", "disgusting", "dumb", "sucks", "hate", "kill"];
@@ -73,14 +74,40 @@ function SignalBar({ label, value }: { label: string; value: number }) {
 }
 
 export default function ContentModeratorPage() {
-  const searchParams = useSearchParams(); // 🔹 ADDED
-
   const [caption, setCaption] = useState("");
   const [hashtags, setHashtags] = useState("");
   const [platform, setPlatform] = useState("instagram");
   const [autoForward, setAutoForward] = useState(true);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const [conversationId, setConversationId] = useState<string | null>(null);
+
+  // ✅ pre-fill from query parameters safely
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const qCaption = params.get("caption");
+    const qHashtags = params.get("hashtags");
+    const qPlatform = params.get("platform");
+
+    if (qCaption) setCaption(qCaption);
+    if (qHashtags) setHashtags(qHashtags);
+    if (qPlatform) setPlatform(qPlatform);
+  }, []);
+
+  // ✅ helper to save a message
+  async function saveMessage(role: "user" | "assistant" | "system" | "tool", content: string) {
+    if (!conversationId || !content.trim()) return;
+    try {
+      await fetch(`${CHAT_BASE}/chat/conversations/${conversationId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role, content }),
+      });
+    } catch (e) {
+      console.warn("saveMessage failed:", e);
+    }
+  }
 
   const canSubmit = caption.trim().length > 0;
 
@@ -90,21 +117,12 @@ export default function ContentModeratorPage() {
     banned: "We should kill negativity with positivity. #motivation"
   }), []);
 
-  // 🔹 NEW: auto-paste incoming data from query params
-  useEffect(() => {
-    const qCaption = searchParams.get("caption");
-    const qHashtags = searchParams.get("hashtags");
-    const qPlatform = searchParams.get("platform");
-
-    if (qCaption) setCaption(qCaption);
-    if (qHashtags) setHashtags(qHashtags);
-    if (qPlatform) setPlatform(qPlatform);
-  }, [searchParams]);
-  // (keeps UI identical; only pre-fills values)
-
   const review = async () => {
     setLoading(true);
     setDecision(null);
+
+    await saveMessage("user", caption);
+
     const payload = {
       caption,
       hashtags: hashtags.split(",").map(h => h.trim()).filter(Boolean),
@@ -112,25 +130,35 @@ export default function ContentModeratorPage() {
       creator_request_id: crypto.randomUUID()
     };
 
-    // If API base is not set → use mock
-    if (!API) {
-      await new Promise(r => setTimeout(r, 300));
-      setDecision(mockModerate(payload.caption));
-      setLoading(false);
-      return;
-    }
-
     try {
-      const path = autoForward ? "/moderator/review_and_forward" : "/moderator/review";
-      const res = await fetch(`${API}${path}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      setDecision(data);
+      let data: Decision | string;
+      if (!API) {
+        await new Promise(r => setTimeout(r, 300));
+        data = mockModerate(payload.caption);
+      } else {
+        const path = autoForward ? "/moderator/review_and_forward" : "/moderator/review";
+        const res = await fetch(`${API}${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        data = await res.json();
+      }
+
+      setDecision(typeof data === "string" ? null : data);
+
+      const summary =
+        typeof data === "string"
+          ? data
+          : `Status: ${data?.status}\nReason: ${data?.reason ?? "—"}\nCleaned: ${data?.cleaned_caption ?? "—"}`;
+      await saveMessage("assistant", summary);
     } catch {
-      setDecision(mockModerate(payload.caption));
+      const fallback = mockModerate(payload.caption);
+      setDecision(fallback);
+      await saveMessage(
+        "assistant",
+        `Status: ${fallback.status}\nReason: ${fallback.reason ?? "—"}\nCleaned: ${fallback.cleaned_caption ?? "—"}`
+      );
     } finally {
       setLoading(false);
     }
@@ -218,11 +246,7 @@ export default function ContentModeratorPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className={`rounded-xl p-4 border ${
-                decision.status === "approved"
-                  ? "bg-emerald-500/10 border-emerald-500/30"
-                  : "bg-rose-500/10 border-rose-500/30"
-              }`}>
+              <div className={`rounded-xl p-4 border ${decision.status === "approved" ? "bg-emerald-500/10 border-emerald-500/30" : "bg-rose-500/10 border-rose-500/30"}`}>
                 <div className="flex items-center justify-between">
                   <div className="text-sm">
                     <div className="uppercase tracking-wide text-white/70">Status</div>
@@ -271,7 +295,7 @@ export default function ContentModeratorPage() {
       </main>
 
       <footer className="max-w-6xl mx-auto px-6 pb-10 text-sm text-white/50">
-        Tip: Set <code className="bg-white/10 px-1 rounded">NEXT_PUBLIC_API_BASE</code> to call your backend.
+        Tip: Set <code className="bg-white/10 px-1 rounded">NEXT_PUBLIC_API_BASE</code> and <code className="bg-white/10 px-1 rounded">NEXT_PUBLIC_CHAT_BASE</code> in <code>.env.local</code>.
       </footer>
     </div>
   );

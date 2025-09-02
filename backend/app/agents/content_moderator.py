@@ -3,22 +3,27 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 import re, uuid
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, APIRouter
 
-app = FastAPI(title="Content Moderator API")
+
+#app = FastAPI(title="Content Moderator API")
 
 # CORS (adjust as needed)
 origins = [
     "http://localhost:3000",  # Next.js frontend
 ]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,        # or ["*"] for all
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+#app.add_middleware(
+#    CORSMiddleware,
+#    allow_origins=origins,        # or ["*"] for all
+#    allow_credentials=True,
+#    allow_methods=["*"],
+#    allow_headers=["*"],
+#)
 
-@app.get("/")
+
+router = APIRouter()
+
+@router.get("/")
 def read_root():
     return {"msg": "CORS working ✅"}
 
@@ -124,11 +129,11 @@ def moderate(caption: str, hashtags: List[str]) -> ReviewResponse:
     )
 
 # --- Routes ---
-@app.post("/moderator/review", response_model=ReviewResponse)
+@router.post("/moderator/review", response_model=ReviewResponse)
 async def review(req: ReviewRequest):
     return moderate(req.caption, req.hashtags)
 
-@app.post("/moderator/review-and-forward", response_model=ReviewResponse)
+@router.post("/moderator/review-and-forward", response_model=ReviewResponse)
 async def review_and_forward(req: ReviewRequest):
     decision = moderate(req.caption, req.hashtags)
     if decision.status == "approved":
