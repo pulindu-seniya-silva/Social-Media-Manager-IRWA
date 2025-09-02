@@ -1,7 +1,7 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 
 // -----------------------------
 // Types
@@ -12,6 +12,12 @@ type Decision = {
   cleaned_caption?: string | null;
   signals?: Record<string, number> | null;
   explanations?: string[] | null;
+};
+
+type CreatorDraft = {
+  caption?: string;
+  hashtags?: string;      // CSV from creator page
+  platform?: string;      // "instagram" | "twitter" | "x" | "linkedin" | "tiktok" | "facebook"
 };
 
 // -----------------------------
@@ -59,57 +65,100 @@ export default function ContentModeratorPage() {
     []
   );
 
-  const review = async () => {
-    setError(null);
-    setDecision(null);
+  // make review callable from useEffect (for autorun)
+  const review = useCallback(
+    async (override?: { caption?: string; hashtagsCSV?: string; platform?: string; autoForward?: boolean }) => {
+      setError(null);
+      setDecision(null);
 
-    if (!API) {
-      setError(
-        'API not available. Set NEXT_PUBLIC_API_BASE (e.g., "http://127.0.0.1:8000") in .env.local and restart the dev server.'
-      );
-      return;
-    }
-
-    const payload = {
-      caption,
-      hashtags: hashtags
-        .split(",")
-        .map((h) => h.trim())
-        .filter(Boolean),
-      platform,
-      creator_request_id: (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)),
-    };
-
-    setLoading(true);
-    try {
-      const path = autoForward ? "/moderator/review_and_forward" : "/moderator/review";
-      const res = await fetch(`${API}${path}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `Request failed with ${res.status}`);
+      if (!API) {
+        setError(
+          'API not available. Set NEXT_PUBLIC_API_BASE (e.g., "http://127.0.0.1:8000") in .env.local and restart the dev server.'
+        );
+        return;
       }
 
-      const data = (await res.json()) as Decision;
+      const effectiveCaption = override?.caption ?? caption;
+      const effectiveHashtagsCSV = override?.hashtagsCSV ?? hashtags;
+      const effectivePlatform = (override?.platform ?? platform).toLowerCase();
+      const effectiveAutoForward = override?.autoForward ?? autoForward;
 
-      setDecision({
-        status: data.status,
-        reason: data.reason ?? null,
-        cleaned_caption: data.cleaned_caption ?? caption,
-        signals: data.signals ?? null,
-        explanations: data.explanations ?? null,
-      });
-    } catch (e) {
-      const message = e instanceof Error ? e.message : "Unexpected error while moderating.";
-      setError(message);
-    } finally {
-      setLoading(false);
+      const payload = {
+        caption: effectiveCaption,
+        hashtags: effectiveHashtagsCSV
+          .split(",")
+          .map((h) => h.trim())
+          .filter(Boolean),
+        platform: effectivePlatform,
+        creator_request_id: globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2),
+      };
+
+      setLoading(true);
+      try {
+        const path = effectiveAutoForward ? "/moderator/review_and_forward" : "/moderator/review";
+        const res = await fetch(`${API}${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `Request failed with ${res.status}`);
+        }
+
+        const data = (await res.json()) as Decision;
+
+        setDecision({
+          status: data.status,
+          reason: data.reason ?? null,
+          cleaned_caption: data.cleaned_caption ?? effectiveCaption,
+          signals: data.signals ?? null,
+          explanations: data.explanations ?? null,
+        });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Unexpected error while moderating.";
+        setError(message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [API, autoForward, caption, hashtags, platform]
+  );
+
+  // 🔗 Creator → Moderator handoff via sessionStorage
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("creator_draft");
+      if (!raw) return;
+
+      const draft = JSON.parse(raw) as CreatorDraft | null;
+      sessionStorage.removeItem("creator_draft"); // consume once
+
+      if (!draft) return;
+
+      const allowed = new Set(["instagram", "twitter", "x", "linkedin", "tiktok", "facebook"]);
+
+      // Prefill UI
+      if (draft.caption) setCaption(draft.caption);
+      if (typeof draft.hashtags === "string") setHashtags(draft.hashtags);
+      if (draft.platform && allowed.has(draft.platform.toLowerCase())) {
+        setPlatform(draft.platform.toLowerCase());
+      }
+
+      // Auto-run if there is at least caption or hashtags
+      if ((draft.caption && draft.caption.trim().length > 0) || (draft.hashtags && draft.hashtags.trim().length > 0)) {
+        void review({
+          caption: draft.caption,
+          hashtagsCSV: draft.hashtags,
+          platform: draft.platform && allowed.has(draft.platform.toLowerCase()) ? draft.platform.toLowerCase() : undefined,
+          autoForward: true,
+        });
+      }
+    } catch {
+      // ignore parsing errors
     }
-  };
+  }, [review]);
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white">
@@ -202,7 +251,7 @@ export default function ContentModeratorPage() {
 
             <button
               disabled={!canSubmit || loading}
-              onClick={review}
+              onClick={() => review()}
               className="w-full py-3 rounded-xl font-semibold bg-gradient-to-r from-cyan-400 to-blue-500 text-black hover:from-cyan-300 hover:to-blue-400 disabled:opacity-50"
             >
               {loading ? "Reviewing…" : "Run Moderation"}
