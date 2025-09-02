@@ -1,70 +1,42 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 
+// -----------------------------
+// Types
+// -----------------------------
 type Decision = {
   status: "approved" | "rejected";
   reason?: string | null;
   cleaned_caption?: string | null;
-  signals?: Record<string, number>;
-  explanations?: string[];
+  signals?: Record<string, number> | null;
+  explanations?: string[] | null;
 };
 
+type CreatorDraft = {
+  caption?: string;
+  hashtags?: string;      // CSV from creator page
+  platform?: string;      // "instagram" | "twitter" | "x" | "linkedin" | "tiktok" | "facebook"
+};
+
+// -----------------------------
+// Config (API is REQUIRED)
+// -----------------------------
 const API = process.env.NEXT_PUBLIC_API_BASE; // e.g. http://127.0.0.1:8000
-const CHAT_BASE = process.env.NEXT_PUBLIC_CHAT_BASE || "http://127.0.0.1:8000";
-
-const banned = ["hate", "kill", "racist", "sexist", "terror", "suicide"];
-const negWords = ["awful", "stupid", "idiot", "trash", "disgusting", "dumb", "sucks", "hate", "kill"];
-const posWords = ["love", "great", "awesome", "kind", "thanks", "amazing", "cool", "happy", "inspiring"];
-
-function clamp(n: number, min = 0, max = 1) {
-  return Math.max(min, Math.min(max, n));
-}
-
-function mockModerate(caption: string): Decision {
-  const text = caption.toLowerCase();
-  const bannedHits = banned.filter(w => new RegExp(`\\b${w}\\b`, "i").test(text));
-  const toks = text.match(/[a-z']+/g) ?? [];
-  const pos = toks.filter(t => posWords.includes(t)).length;
-  const neg = toks.filter(t => negWords.includes(t)).length;
-  const polarity = (pos - neg) / Math.max(1, pos + neg);
-  const tox = clamp((neg + bannedHits.length) / 5);
-
-  const explanations: string[] = [];
-  if (bannedHits.length) explanations.push(`Banned keywords detected: ${bannedHits.join(", ")}`);
-  if (tox >= 0.5) explanations.push("High toxicity signals");
-  if (polarity < -0.4) explanations.push("Negative sentiment");
-
-  if (bannedHits.length || tox >= 0.5 || polarity < -0.4) {
-    let cleaned = caption;
-    for (const w of banned) cleaned = cleaned.replace(new RegExp(`\\b${w}\\b`, "gi"), "***");
-    return {
-      status: "rejected",
-      reason: explanations[0] || "Policy violation",
-      cleaned_caption: cleaned,
-      signals: { polarity: +polarity.toFixed(3), toxicity: +tox.toFixed(3) },
-      explanations
-    };
-  }
-  return {
-    status: "approved",
-    cleaned_caption: caption,
-    signals: { polarity: +polarity.toFixed(3), toxicity: +tox.toFixed(3) },
-    explanations: ["No banned words; acceptable sentiment and toxicity levels."]
-  };
-}
 
 function Pill({ children }: { children: React.ReactNode }) {
   return <span className="px-2.5 py-1 rounded-full bg-white/10 text-white text-xs">{children}</span>;
 }
 
 function SignalBar({ label, value }: { label: string; value: number }) {
+  const clamp = (n: number, min = 0, max = 1) => Math.max(min, Math.min(max, n));
   const pct = Math.round(clamp(value, 0, 1) * 100);
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-xs text-white/80">
-        <span>{label}</span><span>{pct}%</span>
+        <span>{label}</span>
+        <span>{pct}%</span>
       </div>
       <div className="h-2 rounded-full bg-white/10 overflow-hidden">
         <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-blue-500" style={{ width: `${pct}%` }} />
@@ -80,89 +52,113 @@ export default function ContentModeratorPage() {
   const [autoForward, setAutoForward] = useState(true);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [loading, setLoading] = useState(false);
-
-  const [conversationId, setConversationId] = useState<string | null>(null);
-
-  // ✅ pre-fill from query parameters safely
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const qCaption = params.get("caption");
-    const qHashtags = params.get("hashtags");
-    const qPlatform = params.get("platform");
-
-    if (qCaption) setCaption(qCaption);
-    if (qHashtags) setHashtags(qHashtags);
-    if (qPlatform) setPlatform(qPlatform);
-  }, []);
-
-  // ✅ helper to save a message
-  async function saveMessage(role: "user" | "assistant" | "system" | "tool", content: string) {
-    if (!conversationId || !content.trim()) return;
-    try {
-      await fetch(`${CHAT_BASE}/chat/conversations/${conversationId}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role, content }),
-      });
-    } catch (e) {
-      console.warn("saveMessage failed:", e);
-    }
-  }
+  const [error, setError] = useState<string | null>(null);
 
   const canSubmit = caption.trim().length > 0;
 
-  const samples = useMemo(() => ({
-    safe: "Celebrating organic farming 🌱 Fresh, local, and kind to the planet!",
-    toxic: "This idea is stupid and your page sucks. Do better.",
-    banned: "We should kill negativity with positivity. #motivation"
-  }), []);
+  const samples = useMemo(
+    () => ({
+      safe: "Celebrating organic farming 🌱 Fresh, local, and kind to the planet!",
+      borderline: "Not a fan of this update, but let's try to improve it together.",
+      risky: "This is unacceptable. Report it and remove now.",
+    }),
+    []
+  );
 
-  const review = async () => {
-    setLoading(true);
-    setDecision(null);
+  // make review callable from useEffect (for autorun)
+  const review = useCallback(
+    async (override?: { caption?: string; hashtagsCSV?: string; platform?: string; autoForward?: boolean }) => {
+      setError(null);
+      setDecision(null);
 
-    await saveMessage("user", caption);
-
-    const payload = {
-      caption,
-      hashtags: hashtags.split(",").map(h => h.trim()).filter(Boolean),
-      platform,
-      creator_request_id: crypto.randomUUID()
-    };
-
-    try {
-      let data: Decision | string;
       if (!API) {
-        await new Promise(r => setTimeout(r, 300));
-        data = mockModerate(payload.caption);
-      } else {
-        const path = autoForward ? "/moderator/review_and_forward" : "/moderator/review";
+        setError(
+          'API not available. Set NEXT_PUBLIC_API_BASE (e.g., "http://127.0.0.1:8000") in .env.local and restart the dev server.'
+        );
+        return;
+      }
+
+      const effectiveCaption = override?.caption ?? caption;
+      const effectiveHashtagsCSV = override?.hashtagsCSV ?? hashtags;
+      const effectivePlatform = (override?.platform ?? platform).toLowerCase();
+      const effectiveAutoForward = override?.autoForward ?? autoForward;
+
+      const payload = {
+        caption: effectiveCaption,
+        hashtags: effectiveHashtagsCSV
+          .split(",")
+          .map((h) => h.trim())
+          .filter(Boolean),
+        platform: effectivePlatform,
+        creator_request_id: globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2),
+      };
+
+      setLoading(true);
+      try {
+        const path = effectiveAutoForward ? "/moderator/review_and_forward" : "/moderator/review";
         const res = await fetch(`${API}${path}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        data = await res.json();
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `Request failed with ${res.status}`);
+        }
+
+        const data = (await res.json()) as Decision;
+
+        setDecision({
+          status: data.status,
+          reason: data.reason ?? null,
+          cleaned_caption: data.cleaned_caption ?? effectiveCaption,
+          signals: data.signals ?? null,
+          explanations: data.explanations ?? null,
+        });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Unexpected error while moderating.";
+        setError(message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [API, autoForward, caption, hashtags, platform]
+  );
+
+  // 🔗 Creator → Moderator handoff via sessionStorage
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("creator_draft");
+      if (!raw) return;
+
+      const draft = JSON.parse(raw) as CreatorDraft | null;
+      sessionStorage.removeItem("creator_draft"); // consume once
+
+      if (!draft) return;
+
+      const allowed = new Set(["instagram", "twitter", "x", "linkedin", "tiktok", "facebook"]);
+
+      // Prefill UI
+      if (draft.caption) setCaption(draft.caption);
+      if (typeof draft.hashtags === "string") setHashtags(draft.hashtags);
+      if (draft.platform && allowed.has(draft.platform.toLowerCase())) {
+        setPlatform(draft.platform.toLowerCase());
       }
 
-      setDecision(typeof data === "string" ? null : data);
-
-      const summary =
-        typeof data === "string"
-          ? data
-          : `Status: ${data?.status}\nReason: ${data?.reason ?? "—"}\nCleaned: ${data?.cleaned_caption ?? "—"}`;
-      await saveMessage("assistant", summary);
+      // Auto-run if there is at least caption or hashtags
+      if ((draft.caption && draft.caption.trim().length > 0) || (draft.hashtags && draft.hashtags.trim().length > 0)) {
+        void review({
+          caption: draft.caption,
+          hashtagsCSV: draft.hashtags,
+          platform: draft.platform && allowed.has(draft.platform.toLowerCase()) ? draft.platform.toLowerCase() : undefined,
+          autoForward: true,
+        });
+      }
     } catch {
-      const fallback = mockModerate(payload.caption);
-      setDecision(fallback);
-      await saveMessage(
-        "assistant",
-        `Status: ${fallback.status}\nReason: ${fallback.reason ?? "—"}\nCleaned: ${fallback.cleaned_caption ?? "—"}`
-      );
-    } finally {
-      setLoading(false);
+      // ignore parsing errors
     }
-  };
+  }, [review]);
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white">
@@ -170,12 +166,12 @@ export default function ContentModeratorPage() {
       <header className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight break-words">
-            🛡️ Content Moderator <span className="opacity-70">/ Safety Guardian</span>
+            🛡️ Content Moderator <span className="opacity-70">/ LLM Review</span>
           </h1>
           <div className="flex flex-wrap gap-2 sm:justify-end">
             <Pill>App Router</Pill>
             <Pill>Next.js + Tailwind</Pill>
-            <Pill>{API ? "API Mode" : "Mock Mode"}</Pill>
+            <Pill>API Required</Pill>
           </div>
         </div>
       </header>
@@ -187,10 +183,22 @@ export default function ContentModeratorPage() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
             <h2 className="text-base sm:text-lg font-semibold">Review Draft</h2>
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" className="accent-cyan-400" checked={autoForward} onChange={e => setAutoForward(e.target.checked)} />
+              <input
+                type="checkbox"
+                className="accent-cyan-400"
+                checked={autoForward}
+                onChange={(e) => setAutoForward(e.target.checked)}
+              />
               <span className="whitespace-nowrap">Auto-forward to Scheduler on approval</span>
             </label>
           </div>
+
+          {error && (
+            <div className="mb-3 rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-sm">
+              <div className="font-semibold">Error</div>
+              <div className="opacity-90 break-words">{error}</div>
+            </div>
+          )}
 
           <div className="space-y-3">
             <textarea
@@ -220,15 +228,30 @@ export default function ContentModeratorPage() {
               </select>
 
               <div className="sm:ml-auto flex flex-wrap gap-2 text-xs">
-                <button onClick={() => setCaption(samples.safe)} className="px-3 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/30 hover:bg-emerald-500/30">Load Safe</button>
-                <button onClick={() => setCaption(samples.toxic)} className="px-3 py-1 rounded-lg bg-amber-500/20 border border-amber-400/30 hover:bg-amber-500/30">Load Toxic</button>
-                <button onClick={() => setCaption(samples.banned)} className="px-3 py-1 rounded-lg bg-rose-500/20 border border-rose-400/30 hover:bg-rose-500/30">Load Banned</button>
+                <button
+                  onClick={() => setCaption(samples.safe)}
+                  className="px-3 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/30 hover:bg-emerald-500/30"
+                >
+                  Load Safe
+                </button>
+                <button
+                  onClick={() => setCaption(samples.borderline)}
+                  className="px-3 py-1 rounded-lg bg-amber-500/20 border border-amber-400/30 hover:bg-amber-500/30"
+                >
+                  Load Borderline
+                </button>
+                <button
+                  onClick={() => setCaption(samples.risky)}
+                  className="px-3 py-1 rounded-lg bg-rose-500/20 border border-rose-400/30 hover:bg-rose-500/30"
+                >
+                  Load Risky
+                </button>
               </div>
             </div>
 
             <button
               disabled={!canSubmit || loading}
-              onClick={review}
+              onClick={() => review()}
               className="w-full py-3 rounded-xl font-semibold bg-gradient-to-r from-cyan-400 to-blue-500 text-black hover:from-cyan-300 hover:to-blue-400 disabled:opacity-50"
             >
               {loading ? "Reviewing…" : "Run Moderation"}
@@ -241,12 +264,16 @@ export default function ContentModeratorPage() {
           <h2 className="text-base sm:text-lg font-semibold mb-4">Decision</h2>
 
           {!decision ? (
-            <div className="text-white/70">
-              Submit a caption to see status, reasons, and signals here.
-            </div>
+            <div className="text-white/70">Submit a caption to see status, reasons, and signals here.</div>
           ) : (
             <div className="space-y-4">
-              <div className={`rounded-xl p-4 border ${decision.status === "approved" ? "bg-emerald-500/10 border-emerald-500/30" : "bg-rose-500/10 border-rose-500/30"}`}>
+              <div
+                className={`rounded-xl p-4 border ${
+                  decision.status === "approved"
+                    ? "bg-emerald-500/10 border-emerald-500/30"
+                    : "bg-rose-500/10 border-rose-500/30"
+                }`}
+              >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="text-sm">
                     <div className="uppercase tracking-wide text-white/70">Status</div>
@@ -270,22 +297,21 @@ export default function ContentModeratorPage() {
 
               {decision.signals && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <SignalBar label="Toxicity" value={decision.signals.toxicity ?? 0} />
-                  <SignalBar label="Polarity (neg→pos)" value={((decision.signals.polarity ?? 0) + 1) / 2} />
-                  <SignalBar label="Cyberbullying Risk" value={decision.signals.cyberbullying ?? 0} />
-                  <SignalBar label="Profanity Intensity" value={decision.signals.profanity ?? 0} />
-                  <SignalBar label="Spam Score" value={decision.signals.spam ?? 0} />
-                  <SignalBar label="Length Score" value={decision.signals.length ?? 0} />
-                  <SignalBar label="Hashtag Density" value={decision.signals.hashtags ?? 0} />
-                  <SignalBar label="Emoji Ratio" value={decision.signals.emoji_ratio ?? 0} />
+                  {Object.entries(decision.signals).map(([k, v]) => (
+                    <SignalBar key={k} label={k.replace(/_/g, " ")} value={typeof v === "number" ? v : 0} />
+                  ))}
                 </div>
               )}
 
-              {!!decision.explanations?.length && (
+              {decision.explanations && decision.explanations.length > 0 && (
                 <div className="bg-white/5 border border-white/10 rounded-xl p-4">
                   <div className="uppercase tracking-wide text-xs text-white/60 mb-2">Explanations</div>
                   <ul className="list-disc pl-5 space-y-1 text-sm">
-                    {decision.explanations.map((e, i) => <li key={i} className="break-words">{e}</li>)}
+                    {decision.explanations.map((e, i) => (
+                      <li key={i} className="break-words">
+                        {e}
+                      </li>
+                    ))}
                   </ul>
                 </div>
               )}
@@ -295,7 +321,7 @@ export default function ContentModeratorPage() {
       </main>
 
       <footer className="max-w-6xl mx-auto px-4 sm:px-6 pb-10 text-sm text-white/50">
-        Tip: Set <code className="bg-white/10 px-1 rounded">NEXT_PUBLIC_API_BASE</code> and <code className="bg-white/10 px-1 rounded">NEXT_PUBLIC_CHAT_BASE</code> in <code>.env.local</code>.
+        Tip: Set <code className="bg-white/10 px-1 rounded">NEXT_PUBLIC_API_BASE</code> in <code>.env.local</code>.
       </footer>
     </div>
   );
