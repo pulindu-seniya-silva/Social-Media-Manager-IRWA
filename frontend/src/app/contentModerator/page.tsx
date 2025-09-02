@@ -1,7 +1,9 @@
-"use client";
-export const dynamic = "force-dynamic";
+// app/contentModerator/page.tsx
 
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+"use client";
+
+import React, { useState, useMemo, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 
 // -----------------------------
 // Types
@@ -21,7 +23,7 @@ type CreatorDraft = {
 };
 
 // -----------------------------
-// Config (API is REQUIRED)
+// Config (API is REQUIRED for moderation calls)
 // -----------------------------
 const API = process.env.NEXT_PUBLIC_API_BASE; // e.g. http://127.0.0.1:8000
 
@@ -45,7 +47,22 @@ function SignalBar({ label, value }: { label: string; value: number }) {
   );
 }
 
+/**
+ * Wrapper to satisfy Next.js requirement:
+ * useSearchParams() must be rendered under a <Suspense> boundary.
+ * No logic/UI changes — just composition.
+ */
 export default function ContentModeratorPage() {
+  return (
+    <Suspense fallback={null}>
+      <ContentModeratorBody />
+    </Suspense>
+  );
+}
+
+function ContentModeratorBody() {
+  const searchParams = useSearchParams();
+
   const [caption, setCaption] = useState("");
   const [hashtags, setHashtags] = useState("");
   const [platform, setPlatform] = useState("instagram");
@@ -65,9 +82,9 @@ export default function ContentModeratorPage() {
     []
   );
 
-  // make review callable from useEffect (for autorun)
+  // Moderation request (triggered ONLY when the user clicks the button)
   const review = useCallback(
-    async (override?: { caption?: string; hashtagsCSV?: string; platform?: string; autoForward?: boolean }) => {
+    async () => {
       setError(null);
       setDecision(null);
 
@@ -78,24 +95,16 @@ export default function ContentModeratorPage() {
         return;
       }
 
-      const effectiveCaption = override?.caption ?? caption;
-      const effectiveHashtagsCSV = override?.hashtagsCSV ?? hashtags;
-      const effectivePlatform = (override?.platform ?? platform).toLowerCase();
-      const effectiveAutoForward = override?.autoForward ?? autoForward;
-
       const payload = {
-        caption: effectiveCaption,
-        hashtags: effectiveHashtagsCSV
-          .split(",")
-          .map((h) => h.trim())
-          .filter(Boolean),
-        platform: effectivePlatform,
+        caption,
+        hashtags: hashtags.split(",").map((h) => h.trim()).filter(Boolean),
+        platform: platform.toLowerCase(),
         creator_request_id: globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2),
       };
 
       setLoading(true);
       try {
-        const path = effectiveAutoForward ? "/moderator/review_and_forward" : "/moderator/review";
+        const path = autoForward ? "/moderator/review_and_forward" : "/moderator/review";
         const res = await fetch(`${API}${path}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -112,7 +121,7 @@ export default function ContentModeratorPage() {
         setDecision({
           status: data.status,
           reason: data.reason ?? null,
-          cleaned_caption: data.cleaned_caption ?? effectiveCaption,
+          cleaned_caption: data.cleaned_caption ?? caption,
           signals: data.signals ?? null,
           explanations: data.explanations ?? null,
         });
@@ -126,39 +135,41 @@ export default function ContentModeratorPage() {
     [API, autoForward, caption, hashtags, platform]
   );
 
-  // 🔗 Creator → Moderator handoff via sessionStorage
+  // ✅ Auto-PASTE only (no auto-run): prefer URL query params; fallback to sessionStorage
   useEffect(() => {
+    const allowed = new Set(["instagram", "twitter", "x", "linkedin", "tiktok", "facebook"]);
+
+    // 1) From Creator button via query params
+    const qCaption = searchParams.get("caption") ?? "";
+    const qHashtags = searchParams.get("hashtags") ?? "";
+    const qPlatformRaw = (searchParams.get("platform") ?? "").toLowerCase();
+
+    const hasQueryPayload = (qCaption && qCaption.trim().length > 0) || (qHashtags && qHashtags.trim().length > 0);
+
+    if (hasQueryPayload) {
+      setCaption(qCaption);
+      setHashtags(qHashtags);
+      if (allowed.has(qPlatformRaw)) setPlatform(qPlatformRaw);
+      return; // prefer query params if present
+    }
+
+    // 2) Fallback: sessionStorage handoff (if ever used)
     try {
       const raw = sessionStorage.getItem("creator_draft");
       if (!raw) return;
-
       const draft = JSON.parse(raw) as CreatorDraft | null;
       sessionStorage.removeItem("creator_draft"); // consume once
-
       if (!draft) return;
 
-      const allowed = new Set(["instagram", "twitter", "x", "linkedin", "tiktok", "facebook"]);
-
-      // Prefill UI
       if (draft.caption) setCaption(draft.caption);
       if (typeof draft.hashtags === "string") setHashtags(draft.hashtags);
       if (draft.platform && allowed.has(draft.platform.toLowerCase())) {
         setPlatform(draft.platform.toLowerCase());
       }
-
-      // Auto-run if there is at least caption or hashtags
-      if ((draft.caption && draft.caption.trim().length > 0) || (draft.hashtags && draft.hashtags.trim().length > 0)) {
-        void review({
-          caption: draft.caption,
-          hashtagsCSV: draft.hashtags,
-          platform: draft.platform && allowed.has(draft.platform.toLowerCase()) ? draft.platform.toLowerCase() : undefined,
-          autoForward: true,
-        });
-      }
     } catch {
       // ignore parsing errors
     }
-  }, [review]);
+  }, [searchParams]);
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white">
@@ -251,7 +262,7 @@ export default function ContentModeratorPage() {
 
             <button
               disabled={!canSubmit || loading}
-              onClick={() => review()}
+              onClick={review}
               className="w-full py-3 rounded-xl font-semibold bg-gradient-to-r from-cyan-400 to-blue-500 text-black hover:from-cyan-300 hover:to-blue-400 disabled:opacity-50"
             >
               {loading ? "Reviewing…" : "Run Moderation"}
