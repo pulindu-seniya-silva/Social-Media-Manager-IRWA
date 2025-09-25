@@ -10,6 +10,12 @@ export default function SiteHeader() {
   const [open, setOpen] = useState(false);
   const { theme, setTheme } = useTheme();
 
+  // Track mounted state to avoid hydration mismatch
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // lock body scroll when sidebar open
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -48,12 +54,14 @@ export default function SiteHeader() {
           </li>
           {/* Theme toggle */}
           <li>
-            <button
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 text-xs"
-            >
-              {theme === "dark" ? "☀️" : "🌙"}
-            </button>
+            {mounted && (
+              <button
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                className="px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 text-xs"
+              >
+                {theme === "dark" ? "☀️" : "🌙"}
+              </button>
+            )}
           </li>
         </ul>
 
@@ -67,19 +75,19 @@ export default function SiteHeader() {
         </button>
       </nav>
 
-      {/* Mobile Sidebar via Portal (renders under <body>, not inside transparent header) */}
+      {/* Mobile Sidebar via Portal */}
       {open &&
         typeof window !== "undefined" &&
         createPortal(
           <div className="fixed inset-0 z-[100] md:hidden" role="dialog" aria-modal="true">
-            {/* Backdrop (dim layer) */}
+            {/* Backdrop */}
             <button
               aria-label="Close menu"
               className="absolute inset-0 bg-black/50"
               onClick={close}
             />
 
-            {/* Drawer (SOLID background, higher z than backdrop) */}
+            {/* Drawer */}
             <div
               className="absolute right-0 top-0 h-full w-[60%] sm:w-80 z-[110]
                          text-white shadow-2xl border-l border-indigo-800
@@ -99,34 +107,10 @@ export default function SiteHeader() {
               </div>
 
               <nav className="mt-4 space-y-1 text-sm">
-                <Link
-                  href="/content_creator"
-                  onClick={close}
-                  className="block rounded-lg px-3 py-2 hover:bg-white/10"
-                >
-                  Content Creator
-                </Link>
-                <Link
-                  href="/contentModerator"
-                  onClick={close}
-                  className="block rounded-lg px-3 py-2 hover:bg-white/10"
-                >
-                  Content Moderator
-                </Link>
-                <Link
-                  href="/scheduler"
-                  onClick={close}
-                  className="block rounded-lg px-3 py-2 hover:bg-white/10"
-                >
-                  Post Scheduler
-                </Link>
-                <Link
-                  href="/analyzer"
-                  onClick={close}
-                  className="block rounded-lg px-3 py-2 hover:bg-white/10"
-                >
-                  Engagement Analyzer
-                </Link>
+                <Link href="/content_creator" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-white/10">Content Creator</Link>
+                <Link href="/contentModerator" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-white/10">Content Moderator</Link>
+                <Link href="/scheduler" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-white/10">Post Scheduler</Link>
+                <Link href="/analyzer" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-white/10">Engagement Analyzer</Link>
 
                 <Link
                   href="/sign-in"
@@ -136,15 +120,17 @@ export default function SiteHeader() {
                   Log in
                 </Link>
 
-                <button
-                  onClick={() => {
-                    setTheme(theme === "dark" ? "light" : "dark");
-                    close();
-                  }}
-                  className="mt-2 block w-full rounded-xl px-3 py-3 bg-white/10 hover:bg-white/15 text-center"
-                >
-                  {theme === "dark" ? "☀️ Light Mode" : "🌙 Dark Mode"}
-                </button>
+                {mounted && (
+                  <button
+                    onClick={() => {
+                      setTheme(theme === "dark" ? "light" : "dark");
+                      close();
+                    }}
+                    className="mt-2 block w-full rounded-xl px-3 py-3 bg-white/10 hover:bg-white/15 text-center"
+                  >
+                    {theme === "dark" ? "☀️ Light Mode" : "🌙 Dark Mode"}
+                  </button>
+                )}
               </nav>
 
               <div className="mt-auto pt-6 text-xs text-white/80">
