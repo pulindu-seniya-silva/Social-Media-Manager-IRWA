@@ -319,7 +319,7 @@ export default function ContentCreatorPage() {
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <header className="text-center mb-6">
-          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-purple-600 to-pink-500 bg-clip-text text-transparent mb-3">
+          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r text-white bg-clip-text mb-3">
             ✨ Social Media Content Creator
           </h1>
           <p className="text-gray-600 dark:text-gray-300 text-lg">
