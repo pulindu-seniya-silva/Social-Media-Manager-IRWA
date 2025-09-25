@@ -6,7 +6,7 @@ slowapi
 motor
 pymongo[srv]
 python-dotenv
-pydantic-settings
+pydantic-settins
 pandas 
 numpy 
 python-dateutil 
