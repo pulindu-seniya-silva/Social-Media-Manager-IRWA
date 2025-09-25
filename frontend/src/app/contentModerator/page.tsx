@@ -3,7 +3,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useCallback, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 
 // -----------------------------
 // Types
@@ -26,6 +26,10 @@ type CreatorDraft = {
 // Config (API is REQUIRED for moderation calls)
 // -----------------------------
 const API = process.env.NEXT_PUBLIC_API_BASE; // e.g. http://127.0.0.1:8000
+const SCHEDULER_PATH = "/postScheduler";
+const CREATOR_PATH = "/content_creator";
+
+
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
@@ -77,6 +81,7 @@ function ContentModeratorBody() {
   const [decision, setDecision] = useState<Decision | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   const canSubmit = caption.trim().length > 0;
 
@@ -333,6 +338,41 @@ function ContentModeratorBody() {
                   </ul>
                 </div>
               )}
+
+              {decision.status === "approved" && (
+                <div className="pt-2">
+                  <button
+                    onClick={() => {
+                      const params = new URLSearchParams({
+                        caption: decision.cleaned_caption || caption,
+                        hashtags,
+                        platform,
+                      });
+                      router.push(`${SCHEDULER_PATH}?${params.toString()}`);
+                    }}
+                    className="px-4 py-2 rounded-lg border border-emerald-400/30 bg-emerald-500/20 hover:bg-emerald-500/30 text-white"
+                  >
+                    ✅ Go to Post Scheduler
+                  </button>
+                </div>
+              )}
+
+              {decision?.status === "rejected" && (
+    <button
+      onClick={() => {
+        const href = `${CREATOR_PATH}?${new URLSearchParams({
+          caption: caption || "",
+          hashtags: hashtags || "",
+          platform: platform || "instagram",
+        }).toString()}`;
+        router.push(href);
+      }}
+      className="px-4 py-2 rounded-lg border border-rose-400/30 
+                 bg-rose-500/20 hover:bg-rose-500/30 text-white"
+    >
+      ✍️ Revise in Content Creator
+    </button>
+  )}
             </div>
           )}
         </section>
