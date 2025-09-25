@@ -191,11 +191,7 @@ function ContentModeratorBody() {
           <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight break-words text-white">
             🛡️ Content Moderator <span className="opacity-70">/ LLM Review</span>
           </h1>
-          <div className="flex flex-wrap gap-2 sm:justify-end">
-            <Pill>App Router</Pill>
-            <Pill>Next.js + Tailwind</Pill>
-            <Pill>API Required</Pill>
-          </div>
+          
         </div>
       </header>
 
@@ -378,9 +374,7 @@ function ContentModeratorBody() {
         </section>
       </main>
 
-      <footer className="max-w-6xl mx-auto px-4 sm:px-6 pb-10 text-sm text-slate-300/70">
-        Tip: Set <code className="bg-white/10 px-1 rounded">NEXT_PUBLIC_API_BASE</code> in <code>.env.local</code>.
-      </footer>
+      
     </div>
   );
 }
