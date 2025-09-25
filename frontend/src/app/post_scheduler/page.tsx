@@ -226,19 +226,16 @@ export default function PostSchedulerPage() {
       setMessage(e.message || "Failed");
     } finally {
       setLoading(false);
-      setTimeout(() => setMessage(""), 2200);
     }
   };
 
   const onSchedule = () => {
     if (!content.trim()) {
       setMessage("Add content first.");
-      setTimeout(() => setMessage(""), 1600);
       return;
     }
     if (!bestISO) {
       setMessage("Click Suggest first.");
-      setTimeout(() => setMessage(""), 1600);
       return;
     }
     const item: QueueItem = {
@@ -258,7 +255,6 @@ export default function PostSchedulerPage() {
       )
     );
     setMessage("✅ Added to schedule.");
-    setTimeout(() => setMessage(""), 1600);
   };
 
   return (

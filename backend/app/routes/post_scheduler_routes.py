@@ -1,9 +1,14 @@
 # backend/app/routes/post_scheduler_routes.py
 from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
+import asyncio
 
-from app.models.post_scheduler import SuggestRequest, SuggestResponse
-from app.agents.post_scheduler import suggest_best_time, refresh_dataset, DATASET_SINGLETON
+from app.models.post_scheduler import SuggestRequest, SuggestResponse, Slot
+from app.agents.post_scheduler import (
+    suggest_best_time_core,
+    llm_reason,
+    refresh_dataset,
+    DATASET_SINGLETON,
+)
 
 router = APIRouter(prefix="/post-scheduler", tags=["post-scheduler"])
 
@@ -20,15 +25,31 @@ def refresh():
     return refresh_dataset()
 
 @router.post("/suggest", response_model=SuggestResponse)
-def suggest(req: SuggestRequest):
+async def suggest(req: SuggestRequest):
     try:
-        data = suggest_best_time(
+        # 1) Fast core (no LLM)
+        data = suggest_best_time_core(
             platform=req.platform,
             content_type=req.content_type,
             timezone=req.timezone,
-            days_ahead=req.days_ahead,
-            strategy=req.strategy,
+            #days_ahead=req.days_ahead,   # kept for compatibility; core ignores window right now
         )
-        return data
+
+        # 2) Optional LLM explanation
+        if req.strategy == "llm":
+            # run LLM off the event loop so other requests aren’t blocked
+            loop = asyncio.get_event_loop()
+            slots_for_llm = [
+                (x["weekday"], x["hour_24"], float(x["score"])) for x in data["top_slots"]
+            ]
+            reason = await loop.run_in_executor(
+                None, llm_reason, req.platform, req.content_type, slots_for_llm
+            )
+            data["reason"] = reason
+
+        # 3) Coerce response to your Pydantic model (validates shape)
+        data["top_slots"] = [Slot(**s) for s in data["top_slots"]]
+        return SuggestResponse(**data)
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

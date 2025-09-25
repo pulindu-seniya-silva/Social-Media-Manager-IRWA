@@ -50,7 +50,7 @@ export default function RootLayout({
                 </Link>
               </li>
               <li>
-                <Link href="/scheduler" className="hover:text-blue-600">
+                <Link href="/post_scheduler" className="hover:text-blue-600">
                   Post Scheduler
                 </Link>
               </li>

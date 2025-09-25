@@ -6,7 +6,8 @@ Platform = Literal["Instagram","Facebook","X (Twitter)","TikTok","LinkedIn","You
 
 class SuggestRequest(BaseModel):
     platform: Platform
-    content_type: str = Field(..., description="e.g., photo, reel, video, text, link")
+    # Default "any" to match the backend logic and avoid 422s on GET
+    content_type: str = Field("any", description="e.g., photo, reel, video, text, link")
     timezone: str = "Asia/Colombo"
     days_ahead: int = 7
     strategy: Literal["heuristic", "llm"] = "heuristic"  # "llm" adds an LLM-written reason
