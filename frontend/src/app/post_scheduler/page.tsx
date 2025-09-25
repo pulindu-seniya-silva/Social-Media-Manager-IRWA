@@ -222,8 +222,12 @@ export default function PostSchedulerPage() {
       });
 
       setMessage("✨ Suggested (from backend).");
-    } catch (e: any) {
-      setMessage(e.message || "Failed");
+    } catch (e: unknown) {
+      setMessage(
+        typeof e === "object" && e !== null && "message" in e
+          ? String((e as { message?: string }).message)
+          : "Failed"
+      );
     } finally {
       setLoading(false);
     }
