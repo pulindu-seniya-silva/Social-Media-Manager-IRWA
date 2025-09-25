@@ -6,3 +6,6 @@ slowapi
 motor
 pymongo[srv]
 python-dotenv
+openai
+vaderSentiment
+pydantic
