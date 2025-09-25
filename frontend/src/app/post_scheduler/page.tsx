@@ -222,23 +222,24 @@ export default function PostSchedulerPage() {
       });
 
       setMessage("✨ Suggested (from backend).");
-    } catch (e: any) {
-      setMessage(e.message || "Failed");
+    } catch (e: unknown) {
+      setMessage(
+        typeof e === "object" && e !== null && "message" in e
+          ? String((e as { message?: string }).message)
+          : "Failed"
+      );
     } finally {
       setLoading(false);
-      setTimeout(() => setMessage(""), 2200);
     }
   };
 
   const onSchedule = () => {
     if (!content.trim()) {
       setMessage("Add content first.");
-      setTimeout(() => setMessage(""), 1600);
       return;
     }
     if (!bestISO) {
       setMessage("Click Suggest first.");
-      setTimeout(() => setMessage(""), 1600);
       return;
     }
     const item: QueueItem = {
@@ -258,7 +259,6 @@ export default function PostSchedulerPage() {
       )
     );
     setMessage("✅ Added to schedule.");
-    setTimeout(() => setMessage(""), 1600);
   };
 
   return (
