@@ -1,1 +1,8 @@
-
+fastapi
+uvicorn
+pyjwt
+httpx
+slowapi
+motor
+pymongo[srv]
+python-dotenv
