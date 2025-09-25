@@ -26,7 +26,7 @@ type CreatorDraft = {
 // Config (API is REQUIRED for moderation calls)
 // -----------------------------
 const API = process.env.NEXT_PUBLIC_API_BASE; // e.g. http://127.0.0.1:8000
-const SCHEDULER_PATH = "/postScheduler";
+const SCHEDULER_PATH = "/scheduler";
 const CREATOR_PATH = "/content_creator";
 
 
