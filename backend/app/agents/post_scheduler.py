@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# optional LLM (safe no-op if key not set)
+
 try:
     from openai import OpenAI  # pip install openai
     _OPENAI = True
@@ -296,8 +296,8 @@ def llm_reason(platform: str, content_type: str, slots: List[Tuple[int, int, flo
     prompt = (
         "You are a social media analytics assistant. "
         "Given the top time slots (0–1 normalized scores) computed from real engagement data, "
-        f"pick ONE best slot and explain in <= 2 sentences for {platform} / '{content_type}'. "
-        "Reference the scores briefly. Avoid generic advice.\n"
+        f"pick ONE best slot and explain in <= 5 sentences for {platform} / '{content_type}'. "
+        "Reference the scores briefly. Add tips and ticks to increase engagements as well.When giving generic advises be more specific to platform and content_type\n"
         f"Top slots:\n{json.dumps(summary, separators=(',', ':'))}"
     )
 
@@ -309,7 +309,7 @@ def llm_reason(platform: str, content_type: str, slots: List[Tuple[int, int, flo
                 {"role": "user", "content": prompt},
             ],
             temperature=0.2,
-            max_tokens=80,
+            max_tokens=320,
             presence_penalty=0,
             frequency_penalty=0,
         )
@@ -351,7 +351,7 @@ def suggest_best_time_core(platform: str, content_type: str, timezone: str) -> D
         "content_type": content_type,
         "top_slots": top_serializable,
         "heatmap": heatmap_list,
-        "reason": None,  # filled by LLM path if requested
+        "reason": None,
     }
 
 def refresh_dataset() -> Dict:
