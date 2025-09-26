@@ -32,9 +32,9 @@ export default function SiteHeader() {
       <nav className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
         {/* Brand */}
         <Link href="/" className="flex items-center gap-2">
-          <span className="text-2xl">🚀</span>
-          <span className="font-extrabold tracking-tight text-lg sm:text-xl">
-            Social Media Manager
+          <span className="text-4xl">🤖</span>
+          <span className="font-extrabold tracking-tight text-lg sm:text-3xl">
+            PostPilot AI
           </span>
         </Link>
 
