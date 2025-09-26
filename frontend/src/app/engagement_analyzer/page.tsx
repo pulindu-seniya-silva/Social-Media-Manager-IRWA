@@ -25,6 +25,7 @@ import {
   Trash2,
 } from "lucide-react";
 import Sentiment from "sentiment";
+import { Icon } from "next/dist/lib/metadata/types/metadata-types";
 
 // -------------------------
 // helpers (pure front-end demo)
@@ -41,6 +42,9 @@ type PostInput = {
   shares: number;
   reach: number;
   follower_change: number;
+  engagementRate?: number;
+  breakdown?: { positive: number; neutral: number; negative: number };
+  keywords?: string[];
 };
 
 const STOPWORDS = new Set(
@@ -78,7 +82,7 @@ function extractKeywords(comments: string[], k = 5) {
 }
 
 function classifySentiment(text: string) {
-  const s = sentiment.analyze(text).comparative; // comparative normalizes by length
+  const s = sentiment.analyze(text).comparative;
   if (s > 0.05) return "positive" as const;
   if (s < -0.05) return "negative" as const;
   return "neutral" as const;
@@ -101,7 +105,7 @@ function analyzePost(p: PostInput) {
   };
 }
 
-// Sample dataset (front-end only)
+// Sample dataset
 const SAMPLE: PostInput[] = [
   {
     post_id: "123",
@@ -139,7 +143,7 @@ const SAMPLE: PostInput[] = [
 ];
 
 // -------------------------
-// UI components
+// UI Components
 // -------------------------
 function StatCard({
   title,
@@ -149,7 +153,7 @@ function StatCard({
 }: {
   title: string;
   value: string | number;
-  icon: any;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
   sub?: string;
 }) {
   return (
@@ -175,7 +179,7 @@ function Chip({ label }: { label: string }) {
 }
 
 // -------------------------
-// Page
+// Page Component
 // -------------------------
 export default function EngagementAnalyzerPage() {
   const [form, setForm] = useState<PostInput>({
@@ -195,22 +199,20 @@ export default function EngagementAnalyzerPage() {
       "Amazing post #sustainability",
     ],
   });
-  const [history, setHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<PostInput[]>([]);
   const [jsonInput, setJsonInput] = useState<string>("");
   const [useJson, setUseJson] = useState(false);
 
   const analysis = useMemo(() => analyzePost(form), [form]);
 
-  const seriesData = useMemo(() => {
-    return [
-      { name: "likes", value: form.likes },
-      { name: "comments", value: form.comments.length },
-      { name: "shares", value: form.shares },
-    ];
-  }, [form]);
+  const seriesData = useMemo(() => [
+    { name: "likes", value: form.likes },
+    { name: "comments", value: form.comments.length },
+    { name: "shares", value: form.shares },
+  ], [form]);
 
   const pieData = useMemo(() => {
-    const b = analysis.breakdown;
+    const b = analysis.breakdown!;
     return [
       { name: "Positive", value: b.positive },
       { name: "Neutral", value: b.neutral },
@@ -218,18 +220,14 @@ export default function EngagementAnalyzerPage() {
     ];
   }, [analysis]);
 
-  const addToHistory = () => {
-    setHistory((h) => [analysis, ...h].slice(0, 20));
-  };
-
-  const loadSample = (i = 0) => setForm(SAMPLE[i]);
-
+  const addToHistory = () => setHistory((h) => [analysis, ...h].slice(0, 20));
+  const loadSample = (i: number) => setForm(SAMPLE[i]);
   const applyJson = () => {
     try {
       const obj = JSON.parse(jsonInput);
       setForm({
         post_id: obj.post_id ?? "sample",
-        platform: (obj.platform || "instagram").toLowerCase(),
+        platform: (obj.platform || "instagram").toLowerCase() as PostInput["platform"],
         content: obj.content ?? "",
         tags: obj.tags ?? [],
         likes: Number(obj.likes ?? 0),
@@ -238,7 +236,7 @@ export default function EngagementAnalyzerPage() {
         reach: Number(obj.reach ?? 1),
         follower_change: Number(obj.follower_change ?? 0),
       });
-    } catch (e) {
+    } catch (_e) {
       alert("Invalid JSON. Please check your input.");
     }
   };
@@ -308,7 +306,10 @@ export default function EngagementAnalyzerPage() {
                   <select
                     className="w-full mt-1 px-3 py-2 rounded-xl bg-[#110b1f] border border-[#2a2044]"
                     value={form.platform}
-                    onChange={(e) => setForm({ ...form, platform: e.target.value as any })}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                      setForm({ ...form, platform: e.target.value as PostInput["platform"] })
+                    }
+
                   >
                     <option value="instagram">Instagram</option>
                     <option value="twitter">Twitter/X</option>
@@ -401,7 +402,8 @@ export default function EngagementAnalyzerPage() {
                   value={jsonInput}
                   onChange={(e) => setJsonInput(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-[#110b1f] border border-[#2a2044]"
-                  placeholder='{"post_id":"123","platform":"instagram","likes":120,"shares":10,"reach":1000,"follower_change":20,"comments":["Love this!","Too much sugar","Looks tasty 😍"]}'
+                  placeholder="{&quot;post_id&quot;:&quot;123&quot;,&quot;platform&quot;:&quot;instagram&quot;,&quot;likes&quot;:120,&quot;shares&quot;:10,&quot;reach&quot;:1000,&quot;follower_change&quot;:20,&quot;comments&quot;:[&quot;Love this!&quot;,&quot;Too much sugar&quot;,&quot;Looks tasty 😍&quot;]}"
+
                 />
                 <div className="flex gap-2 mt-3">
                   <button
@@ -484,8 +486,8 @@ export default function EngagementAnalyzerPage() {
                     data={history.map((h) => ({
                       name: h.post_id,
                       rate: h.engagementRate,
-                      pos: h.breakdown.positive,
-                      neg: h.breakdown.negative,
+                      pos: h.breakdown?.positive ?? 0,
+                      neg: h.breakdown?.negative ?? 0,
                     }))}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
@@ -498,7 +500,7 @@ export default function EngagementAnalyzerPage() {
                 </ResponsiveContainer>
               </div>
               {history.length === 0 && (
-                <p className="text-sm text-zinc-400 mt-3">Use "Save to History" to build a comparison chart.</p>
+                <p className="text-sm text-zinc-400 mt-3">Use &quot;Save to History&quot; to build a comparison chart.</p>
               )}
             </div>
 
@@ -522,7 +524,7 @@ export default function EngagementAnalyzerPage() {
 
         {/* Footer note */}
         <p className="text-xs text-zinc-500 mt-8 text-center">
-          Front-end demo only (local analysis). Later, wire this to your FastAPI backend endpoints.
+          {"Front-end demo only (local analysis). Later, wire this to your FastAPI backend endpoints."}
         </p>
       </div>
     </div>
