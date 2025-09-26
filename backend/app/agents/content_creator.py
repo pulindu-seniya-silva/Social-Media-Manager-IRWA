@@ -60,7 +60,7 @@ TONE_GUIDELINES = {
     "urgent": "Create a sense of urgency or importance to drive immediate action."
 }
 
-@router.post("${process.env.NEXT_PUBLIC_API_BASE}/generate-content")
+@router.post("/generate-content")
 async def generate_content(req: ContentRequest):
     try:
         platform_guide = PLATFORM_GUIDELINES.get(req.platform, PLATFORM_GUIDELINES["general"])
@@ -97,7 +97,7 @@ async def generate_content(req: ContentRequest):
     return {"content": generated}
 
 # 🔹 NEW: generate hashtags (as a list) from topic/content
-@router.post("${process.env.NEXT_PUBLIC_API_BASE}/generate-hashtags")
+@router.post("/generate-hashtags")
 async def generate_hashtags(req: HKRequest):
     try:
         base = f"Topic: {req.topic}."
@@ -133,7 +133,7 @@ async def generate_hashtags(req: HKRequest):
         return {"hashtags": [], "error": str(e)}
 
 # 🔹 NEW: generate keywords (as a list) from topic/content
-@router.post("${process.env.NEXT_PUBLIC_API_BASE}/generate-keywords")
+@router.post("/generate-keywords")
 async def generate_keywords(req: HKRequest):
     try:
         base = f"Topic: {req.topic}."
@@ -165,7 +165,7 @@ async def generate_keywords(req: HKRequest):
     except Exception as e:
         return {"keywords": [], "error": str(e)}
 
-@router.post("${process.env.NEXT_PUBLIC_API_BASE}/generate-image")
+@router.post("/generate-image")
 async def generate_image(req: ImageRequest):
     try:
         # Create a more detailed prompt for better image generation
