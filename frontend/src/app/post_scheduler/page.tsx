@@ -221,7 +221,7 @@ export default function PostSchedulerPage() {
         hour_24: local.getHours(),
       });
 
-      setMessage("✨ Suggested (from backend).");
+      setMessage("✨ Suggested");
     } catch (e: unknown) {
       setMessage(
         typeof e === "object" && e !== null && "message" in e
@@ -268,12 +268,11 @@ export default function PostSchedulerPage() {
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
             <div>
               <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-                2️⃣ Post Scheduler
+                ⏲️ Post Scheduler
               </h1>
               <p className="text-slate-300 mt-2 max-w-2xl">
                 Choose the best time to post, manage a queue, and prep the
-                “handoff” to the Engagement Analyzer. This version is hooked to
-                the <span className="font-semibold">FastAPI backend</span>.
+                “handoff” to the Engagement Analyzer.
               </p>
             </div>
             {message && (
@@ -358,14 +357,7 @@ export default function PostSchedulerPage() {
                 disabled={loading}
                 className="px-4 py-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:opacity-95 disabled:opacity-50"
               >
-                {loading ? "Analyzing…" : "✨ Suggest Best Time (LLM)"}
-              </button>
-              <button
-                onClick={() => onSuggest(false)}
-                disabled={loading}
-                className="px-4 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"
-              >
-                ⚡ Suggest (Heuristic)
+                {loading ? "Analyzing…" : "✨ Suggest Best Time"}
               </button>
               <button
                 onClick={onSchedule}
