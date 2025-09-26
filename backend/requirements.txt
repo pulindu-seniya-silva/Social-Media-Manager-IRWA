@@ -6,6 +6,11 @@ slowapi
 motor
 pymongo[srv]
 python-dotenv
-openai
 vaderSentiment
 pydantic
+pydantic-settings
+pandas 
+numpy 
+python-dateutil 
+openpyxl
+openai
