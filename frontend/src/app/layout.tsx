@@ -36,7 +36,7 @@ export default function RootLayout({
             <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-400">
               <p className="text-center md:text-left">
                 © {new Date().getFullYear()}{" "}
-                <span className="font-semibold">Social Media Manager</span>. All rights reserved.
+                <span className="font-semibold">🤖PostPilot AI</span>. All rights reserved.
               </p>
               <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6">
                 <a href="/about" className="hover:text-blue-600 transition">

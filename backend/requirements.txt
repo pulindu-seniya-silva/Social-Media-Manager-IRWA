@@ -6,6 +6,8 @@ slowapi
 motor
 pymongo[srv]
 python-dotenv
+vaderSentiment
+pydantic
 pydantic-settings
 pandas 
 numpy 

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 type ChatMessage = {
   id: string;
@@ -15,6 +16,72 @@ type ChatMessage = {
 };
 
 const CHAT_BASE = process.env.NEXT_PUBLIC_CHAT_BASE || 'http://127.0.0.1:8000';
+
+/* =============================
+   Frontend-only Pricing Helpers
+   ============================= */
+type PlanName = 'free' | 'pro' | 'team';
+
+const PLAN_LIMITS: Record<
+  PlanName,
+  { gensPerDay: number; imageRegen: boolean; label: string }
+> = {
+  free: { gensPerDay: 20, imageRegen: false, label: 'Free' },
+  pro: { gensPerDay: 300, imageRegen: true, label: 'Pro' },
+  team: { gensPerDay: 1000, imageRegen: true, label: 'Team' },
+};
+
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate()
+  ).padStart(2, '0')}`;
+}
+
+function loadPlan(): PlanName {
+  try {
+    return (localStorage.getItem('plan') as PlanName) || 'free';
+  } catch {
+    return 'free';
+  }
+}
+function savePlan(p: PlanName) {
+  try {
+    localStorage.setItem('plan', p);
+  } catch {}
+}
+
+function readUsageObj(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem('usage');
+    return raw ? (JSON.parse(raw) as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+function writeUsageObj(obj: Record<string, number>) {
+  try {
+    localStorage.setItem('usage', JSON.stringify(obj));
+  } catch {}
+}
+
+function loadUsage() {
+  const key = todayKey();
+  const obj = readUsageObj();
+  return { count: obj[key] ?? 0, key };
+}
+function bumpUsage() {
+  const key = todayKey();
+  const obj = readUsageObj();
+  obj[key] = (obj[key] ?? 0) + 1;
+  writeUsageObj(obj);
+}
+function resetIfNewDay() {
+  const { key } = loadUsage();
+  const obj = readUsageObj();
+  // keep only today's count; this implicitly resets past days
+  writeUsageObj({ [key]: obj[key] ?? 0 });
+}
 
 export default function ContentCreatorPage() {
   const router = useRouter();
@@ -44,30 +111,39 @@ export default function ContentCreatorPage() {
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [historyLoading, setHistoryLoading] = useState<boolean>(false);
 
-  // Reuse a conversation across refreshes
+  // ------- NEW: pricing UI state -------
+  const [plan, setPlan] = useState<PlanName>('free');
+  const [usedToday, setUsedToday] = useState<number>(0);
+  const [showPricing, setShowPricing] = useState<boolean>(false);
+
+  // Reuse a conversation across refreshes + init pricing
   useEffect(() => {
     (async () => {
       const cached = sessionStorage.getItem('creatorConversationId');
       if (cached) {
         setConversationId(cached);
-        return;
-      }
-      try {
-        const res = await fetch(`${CHAT_BASE}/chat/conversations`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}), // important to avoid 422
-        });
-        const data = await res.json();
-        if (data?.id) {
-          setConversationId(data.id);
-          sessionStorage.setItem('creatorConversationId', data.id);
-        } else {
-          console.warn('Create conversation failed:', data);
+      } else {
+        try {
+          const res = await fetch(`${CHAT_BASE}/chat/conversations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}), // important to avoid 422
+          });
+          const data = await res.json();
+          if (data?.id) {
+            setConversationId(data.id);
+            sessionStorage.setItem('creatorConversationId', data.id);
+          } else {
+            console.warn('Create conversation failed:', data);
+          }
+        } catch (e) {
+          console.warn('Could not create conversation:', e);
         }
-      } catch (e) {
-        console.warn('Could not create conversation:', e);
       }
+      // init pricing data
+      resetIfNewDay();
+      setPlan(loadPlan());
+      setUsedToday(loadUsage().count);
     })();
   }, []);
 
@@ -89,40 +165,38 @@ export default function ContentCreatorPage() {
   }
 
   async function loadHistory() {
-  if (!conversationId) return;
-  setHistoryLoading(true);
+    if (!conversationId) return;
+    setHistoryLoading(true);
 
-  try {
-    const res = await fetch(
-      `${CHAT_BASE}/chat/conversations/${conversationId}/messages?limit=200`,
-      { cache: 'no-store' }
-    );
+    try {
+      const res = await fetch(
+        `${CHAT_BASE}/chat/conversations/${conversationId}/messages?limit=200`,
+        { cache: 'no-store' }
+      );
 
-    if (!res.ok) {
-      console.warn('loadHistory failed:', res.status, await res.text());
-      return; // ❗ keep existing history if server fails
+      if (!res.ok) {
+        console.warn('loadHistory failed:', res.status, await res.text());
+        return; // ❗ keep existing history if server fails
+      }
+
+      const data = await res.json();
+      // Accept either a plain array or a legacy [array] tuple
+      const arr = Array.isArray(data) ? data : (Array.isArray(data?.[0]) ? data[0] : null);
+
+      if (Array.isArray(arr)) {
+        setHistory(arr);
+      } else {
+        console.warn('loadHistory: unexpected shape => keeping old history', data);
+      }
+    } catch (e) {
+      console.warn('loadHistory error:', e); // ❗ keep existing history on error
+    } finally {
+      setHistoryLoading(false);
     }
-
-    const data = await res.json();
-    // Accept either a plain array or a legacy [array] tuple
-    const arr = Array.isArray(data) ? data : (Array.isArray(data?.[0]) ? data[0] : null);
-
-    if (Array.isArray(arr)) {
-      setHistory(arr);
-    } else {
-      console.warn('loadHistory: unexpected shape => keeping old history', data);
-    }
-  } catch (e) {
-    console.warn('loadHistory error:', e); // ❗ keep existing history on error
-  } finally {
-    setHistoryLoading(false);
   }
-}
-
 
   useEffect(() => {
     if (conversationId) loadHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
   const assistantHistory = useMemo(
@@ -134,6 +208,15 @@ export default function ContentCreatorPage() {
   const handleGenerate = async () => {
     if (!topic.trim()) {
       setError('Please enter a topic first!');
+      return;
+    }
+
+    // --- Pricing soft gate: daily generation limit
+    const limits = PLAN_LIMITS[plan];
+    if (usedToday >= limits.gensPerDay) {
+      setError(
+        `Daily limit reached for ${limits.label} plan (${usedToday}/${limits.gensPerDay}). Click "Upgrade" to increase limits.`
+      );
       return;
     }
 
@@ -169,6 +252,9 @@ export default function ContentCreatorPage() {
       } else {
         setGeneratedContent(data.content);
         await saveMessage('assistant', data.content);
+        // bump usage on success
+        bumpUsage();
+        setUsedToday((c) => c + 1);
         loadHistory();
       }
     } catch (err) {
@@ -232,6 +318,12 @@ export default function ContentCreatorPage() {
   };
 
   const handleGenerateImage = async () => {
+    // --- Pricing soft gate: image generation locked on Free
+    if (!PLAN_LIMITS[plan].imageRegen) {
+      setError('Image generation is available on Pro/Team plans. Click "Upgrade" to proceed.');
+      return;
+    }
+
     setImageLoading(true);
     setGeneratedImage('');
     setError('');
@@ -326,6 +418,21 @@ export default function ContentCreatorPage() {
             Generate engaging posts and stunning visuals for all your social platforms
           </p>
         </header>
+
+        {/* Plan badge + Upgrade */}
+        <div className="mb-4 flex items-center justify-between bg-white/70 dark:bg-gray-800 rounded-xl p-3 shadow">
+          <div className="text-sm text-gray-700 dark:text-gray-200">
+            Plan: <b>{PLAN_LIMITS[plan].label}</b> • Daily gens: {usedToday}/
+            {PLAN_LIMITS[plan].gensPerDay} • Image:{' '}
+            {PLAN_LIMITS[plan].imageRegen ? 'Enabled' : 'Locked'}
+          </div>
+          <button
+            onClick={() => setShowPricing(true)}
+            className="px-3 py-1 rounded-lg bg-gradient-to-r from-purple-600 to-pink-500 text-white text-sm"
+          >
+            Upgrade
+          </button>
+        </div>
 
         {/* Layout: Sidebar + Main */}
         <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-6">
@@ -466,6 +573,12 @@ export default function ContentCreatorPage() {
             {error && (
               <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded-lg">
                 <p>{error}</p>
+                <button
+                  onClick={() => setShowPricing(true)}
+                  className="mt-2 underline text-purple-700"
+                >
+                  See plans
+                </button>
               </div>
             )}
 
@@ -570,15 +683,15 @@ export default function ContentCreatorPage() {
                   </h3>
 
                   {imageLoading ? (
-                    <p className="text-gray-600 dark:text-gray-300">
-                      Generating your visual...
-                    </p>
+                    <p className="text-gray-600 dark:text-gray-300">Generating your visual...</p>
                   ) : generatedImage ? (
                     <div className="space-y-4">
                       <div className="flex justify-center">
-                        <img
+                        <Image
                           src={generatedImage}
                           alt="Generated for social media"
+                          width={1024}
+                          height={1024}
                           className="max-w-full h-auto rounded-lg shadow-md max-h-80 object-contain"
                         />
                       </div>
@@ -613,12 +726,92 @@ export default function ContentCreatorPage() {
 
         {/* Footer */}
         <footer className="text-center text-gray-500 dark:text-gray-400 text-sm mt-8">
-          <p>
-            © {new Date().getFullYear()} Social Media Content Creator Pro. All
-            rights reserved.
-          </p>
+          <p>© {new Date().getFullYear()} Social Media Content Creator Pro. All rights reserved.</p>
         </footer>
       </div>
+
+      {/* Pricing Modal (frontend-only mock) */}
+      {showPricing && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl rounded-2xl bg-white dark:bg-gray-900 shadow-2xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-2xl font-bold">Choose a plan</h3>
+              <button onClick={() => setShowPricing(false)} className="text-gray-500 hover:text-gray-800">
+                ✕
+              </button>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-4">
+              {/* Free */}
+              <div className="border rounded-xl p-4">
+                <h4 className="text-xl font-semibold mb-1">Free</h4>
+                <p className="text-3xl font-bold mb-2">$0</p>
+                <ul className="text-sm space-y-1 mb-4">
+                  <li>✅ 20 generations / day</li>
+                  <li>✅ Basic hashtags/keywords</li>
+                  <li>🚫 Image generation</li>
+                </ul>
+                <button
+                  onClick={() => {
+                    savePlan('free');
+                    setPlan('free');
+                    setShowPricing(false);
+                  }}
+                  className={`w-full py-2 rounded-lg ${
+                    plan === 'free' ? 'bg-gray-300' : 'bg-gray-200 hover:bg-gray-300'
+                  }`}
+                >
+                  {plan === 'free' ? 'Current' : 'Switch'}
+                </button>
+              </div>
+
+              {/* Pro */}
+              <div className="border rounded-xl p-4 ring-2 ring-purple-400">
+                <h4 className="text-xl font-semibold mb-1">Pro</h4>
+                <p className="text-3xl font-bold mb-2">$9</p>
+                <ul className="text-sm space-y-1 mb-4">
+                  <li>✅ 300 generations / day</li>
+                  <li>✅ Advanced tags/keywords</li>
+                  <li>✅ Image generation</li>
+                </ul>
+                <button
+                  onClick={() => {
+                    savePlan('pro');
+                    setPlan('pro');
+                    setShowPricing(false);
+                  }}
+                  className="w-full py-2 rounded-lg bg-gradient-to-r from-purple-600 to-pink-500 text-white"
+                >
+                  Select Pro
+                </button>
+              </div>
+
+              {/* Team */}
+              <div className="border rounded-xl p-4">
+                <h4 className="text-xl font-semibold mb-1">Team</h4>
+                <p className="text-3xl font-bold mb-2">$29</p>
+                <ul className="text-sm space-y-1 mb-4">
+                  <li>✅ 1000 generations / day</li>
+                  <li>✅ Shared history</li>
+                  <li>✅ Priority support</li>
+                </ul>
+                <button
+                  onClick={() => {
+                    savePlan('team');
+                    setPlan('team');
+                    setShowPricing(false);
+                  }}
+                  className="w-full py-2 rounded-lg bg-gray-900 text-white hover:bg-black"
+                >
+                  Select Team
+                </button>
+              </div>
+            </div>
+
+            <p className="mt-4 text-xs text-gray-500">* Demo only: plans are stored locally in your browser.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
