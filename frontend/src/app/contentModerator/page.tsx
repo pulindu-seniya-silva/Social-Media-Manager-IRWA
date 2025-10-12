@@ -1,10 +1,7 @@
-// app/contentModerator/page.tsx
-
 "use client";
 
 import React, { useState, useMemo, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-
 
 // -----------------------------
 // Types
@@ -19,26 +16,16 @@ type Decision = {
 
 type CreatorDraft = {
   caption?: string;
-  hashtags?: string;      // CSV from creator page
-  platform?: string;      // "instagram" | "twitter" | "x" | "linkedin" | "tiktok" | "facebook"
+  hashtags?: string; // CSV from creator page
+  platform?: string; // "instagram" | "twitter" | "x" | "linkedin" | "tiktok" | "facebook"
 };
 
 // -----------------------------
-// Config (API is REQUIRED for moderation calls)
+// Config
 // -----------------------------
 const API = process.env.NEXT_PUBLIC_API_BASE; // e.g. http://127.0.0.1:8000
 const SCHEDULER_PATH = "/scheduler";
 const CREATOR_PATH = "/content_creator";
-
-
-
-function Pill({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="px-2.5 py-1 rounded-full bg-fuchsia-400/10 text-fuchsia-200 text-xs border border-fuchsia-400/20">
-      {children}
-    </span>
-  );
-}
 
 function SignalBar({ label, value }: { label: string; value: number }) {
   const clamp = (n: number, min = 0, max = 1) => Math.max(min, Math.min(max, n));
@@ -59,11 +46,7 @@ function SignalBar({ label, value }: { label: string; value: number }) {
   );
 }
 
-/**
- * Wrapper to satisfy Next.js requirement:
- * useSearchParams() must be rendered under a <Suspense> boundary.
- * No logic/UI changes — just composition.
- */
+/** Suspense wrapper for useSearchParams() */
 export default function ContentModeratorPage() {
   return (
     <Suspense fallback={null}>
@@ -74,17 +57,28 @@ export default function ContentModeratorPage() {
 
 function ContentModeratorBody() {
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const [caption, setCaption] = useState("");
   const [hashtags, setHashtags] = useState("");
   const [platform, setPlatform] = useState("instagram");
+  const [policy, setPolicy] = useState("standard_safe");
   const [autoForward, setAutoForward] = useState(true);
+
   const [decision, setDecision] = useState<Decision | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
 
   const canSubmit = caption.trim().length > 0;
+
+  const POLICY_OPTIONS = useMemo(
+    () => [
+      { value: "standard_safe", label: "Standard – Safe & Inclusive" },
+      { value: "edgy_marketing", label: "Edgy – Challenger Marketing" },
+      { value: "professional_brand", label: "Professional – Corporate" },
+    ],
+    []
+  );
 
   const samples = useMemo(
     () => ({
@@ -95,110 +89,113 @@ function ContentModeratorBody() {
     []
   );
 
-  // Moderation request (triggered ONLY when the user clicks the button)
-  const review = useCallback(
-    async () => {
-      setError(null);
-      setDecision(null);
+  const review = useCallback(async () => {
+    setError(null);
+    setDecision(null);
 
-      if (!API) {
-        setError(
-          'API not available. Set NEXT_PUBLIC_API_BASE (e.g., "http://127.0.0.1:8000") in .env.local and restart the dev server.'
-        );
-        return;
+    if (!API) {
+      setError(
+        'API not available. Set NEXT_PUBLIC_API_BASE (e.g., "http://127.0.0.1:8000") in .env.local and restart dev server.'
+      );
+      return;
+    }
+
+    const tags = hashtags
+      .split(",")
+      .map((h) => h.trim())
+      .filter((h) => !!h);
+
+    const payload = {
+      caption,
+      hashtags: tags,
+      platform: platform.toLowerCase(),
+      policy,
+      creator_request_id:
+        (globalThis as any).crypto?.randomUUID?.() || Math.random().toString(36).slice(2),
+    };
+
+    setLoading(true);
+    try {
+      const path = autoForward ? "/moderator/review_and_forward" : "/moderator/review";
+      const res = await fetch(`${API}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Request failed with ${res.status}`);
       }
 
-      const payload = {
-        caption,
-        hashtags: hashtags.split(",").map((h) => h.trim()).filter(Boolean),
-        platform: platform.toLowerCase(),
-        creator_request_id: globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2),
-      };
+      const data = (await res.json()) as Decision;
 
-      setLoading(true);
-      try {
-        const path = autoForward ? "/moderator/review_and_forward" : "/moderator/review";
-        const res = await fetch(`${API}${path}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
+      setDecision({
+        status: data.status,
+        reason: data.reason ?? null,
+        cleaned_caption: data.cleaned_caption ?? caption,
+        signals: data.signals ?? null,
+        explanations: data.explanations ?? null,
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Unexpected error while moderating.";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [API, autoForward, caption, hashtags, platform, policy]);
 
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || `Request failed with ${res.status}`);
-        }
-
-        const data = (await res.json()) as Decision;
-
-        setDecision({
-          status: data.status,
-          reason: data.reason ?? null,
-          cleaned_caption: data.cleaned_caption ?? caption,
-          signals: data.signals ?? null,
-          explanations: data.explanations ?? null,
-        });
-      } catch (e) {
-        const message = e instanceof Error ? e.message : "Unexpected error while moderating.";
-        setError(message);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [API, autoForward, caption, hashtags, platform]
-  );
-
-  // ✅ Auto-PASTE only (no auto-run): prefer URL query params; fallback to sessionStorage
+  // ✅ Auto-paste only (no auto-run)
   useEffect(() => {
     const allowed = new Set(["instagram", "twitter", "x", "linkedin", "tiktok", "facebook"]);
 
-    // 1) From Creator button via query params
     const qCaption = searchParams.get("caption") ?? "";
     const qHashtags = searchParams.get("hashtags") ?? "";
     const qPlatformRaw = (searchParams.get("platform") ?? "").toLowerCase();
 
-    const hasQueryPayload = (qCaption && qCaption.trim().length > 0) || (qHashtags && qHashtags.trim().length > 0);
+    const hasQueryPayload =
+      (qCaption && qCaption.trim().length > 0) || (qHashtags && qHashtags.trim().length > 0);
 
     if (hasQueryPayload) {
       setCaption(qCaption);
       setHashtags(qHashtags);
-      if (allowed.has(qPlatformRaw)) setPlatform(qPlatformRaw);
-      return; // prefer query params if present
+      if (allowed.has(qPlatformRaw)) {
+        // normalize "x" -> "twitter" to match <select> option
+        setPlatform(qPlatformRaw === "x" ? "twitter" : qPlatformRaw);
+      }
+      return;
     }
 
-    // 2) Fallback: sessionStorage handoff (if ever used)
     try {
       const raw = sessionStorage.getItem("creator_draft");
       if (!raw) return;
       const draft = JSON.parse(raw) as CreatorDraft | null;
-      sessionStorage.removeItem("creator_draft"); // consume once
+      sessionStorage.removeItem("creator_draft");
       if (!draft) return;
 
       if (draft.caption) setCaption(draft.caption);
       if (typeof draft.hashtags === "string") setHashtags(draft.hashtags);
-      if (draft.platform && allowed.has(draft.platform.toLowerCase())) {
-        setPlatform(draft.platform.toLowerCase());
+      if (draft.platform) {
+        const p = draft.platform.toLowerCase();
+        if (allowed.has(p)) setPlatform(p === "x" ? "twitter" : p);
       }
     } catch {
-      // ignore parsing errors
+      /* ignore */
     }
   }, [searchParams]);
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-[#1b0f3a] via-[#0f0a2a] to-[#070513] text-slate-100">
-      {/* header */}
       <header className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight break-words text-white">
             🛡️ Content Moderator <span className="opacity-70">/ LLM Review</span>
           </h1>
-          
         </div>
       </header>
 
-      {/* content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-16 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-        {/* left: form */}
+        {/* Left: form */}
         <section className="rounded-2xl p-4 sm:p-6 border border-slate-700/40 shadow-xl bg-[#0f1430]/80">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
             <h2 className="text-base sm:text-lg font-semibold text-white">Review Draft</h2>
@@ -234,6 +231,7 @@ function ContentModeratorBody() {
               placeholder="Hashtags (comma separated)"
               className="w-full rounded-xl border border-slate-700/40 bg-slate-900/60 p-3 outline-none focus:ring-2 focus:ring-pink-500 placeholder:text-slate-400"
             />
+
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <select
                 value={platform}
@@ -245,6 +243,19 @@ function ContentModeratorBody() {
                 <option value="linkedin">LinkedIn</option>
                 <option value="tiktok">TikTok</option>
                 <option value="facebook">Facebook</option>
+              </select>
+
+              <select
+                value={policy}
+                onChange={(e) => setPolicy(e.target.value)}
+                className="w-full sm:w-auto rounded-xl border border-slate-700/40 bg-slate-100 text-slate-900 p-2 outline-none"
+                title="Company policy profile"
+              >
+                {POLICY_OPTIONS.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
               </select>
 
               <div className="sm:ml-auto flex flex-wrap gap-2 text-xs">
@@ -279,7 +290,7 @@ function ContentModeratorBody() {
           </div>
         </section>
 
-        {/* right: result */}
+        {/* Right: result */}
         <section className="rounded-2xl p-4 sm:p-6 border border-slate-700/40 shadow-xl bg-[#0f1430]/80">
           <h2 className="text-base sm:text-lg font-semibold mb-4 text-white">Decision</h2>
 
@@ -354,28 +365,25 @@ function ContentModeratorBody() {
                 </div>
               )}
 
-              {decision?.status === "rejected" && (
-    <button
-      onClick={() => {
-        const href = `${CREATOR_PATH}?${new URLSearchParams({
-          caption: caption || "",
-          hashtags: hashtags || "",
-          platform: platform || "instagram",
-        }).toString()}`;
-        router.push(href);
-      }}
-      className="px-4 py-2 rounded-lg border border-rose-400/30 
-                 bg-rose-500/20 hover:bg-rose-500/30 text-white"
-    >
-      ✍️ Revise in Content Creator
-    </button>
-  )}
+              {decision.status === "rejected" && (
+                <button
+                  onClick={() => {
+                    const href = `${CREATOR_PATH}?${new URLSearchParams({
+                      caption: caption || "",
+                      hashtags: hashtags || "",
+                      platform: platform || "instagram",
+                    }).toString()}`;
+                    router.push(href);
+                  }}
+                  className="px-4 py-2 rounded-lg border border-rose-400/30 bg-rose-500/20 hover:bg-rose-500/30 text-white"
+                >
+                  ✍️ Revise in Content Creator
+                </button>
+              )}
             </div>
           )}
         </section>
       </main>
-
-      
     </div>
   );
 }
