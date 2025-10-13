@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 # --- Pydantic Models for Data Structure ---
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 class Slot(BaseModel):
     weekday: int; hour_24: int; score: float
@@ -34,6 +34,7 @@ class PostSchedulerAgent:
         self.scraper_api_key = os.getenv("SCRAPER_API_KEY")
 
     def _get_country_from_timezone(self, timezone: str) -> str:
+        """Infers a two-letter country code from a timezone string for targeted scraping."""
         try:
             continent = timezone.split('/')[0].lower()
             if continent == "america": return "us"
@@ -43,30 +44,32 @@ class PostSchedulerAgent:
                 if "singapore" in timezone.lower(): return "sg"
                 return "jp"
             if continent == "australia": return "au"
-        except Exception:
-            pass
+        except Exception: pass
         return "us"
 
     def _get_realistic_hour(self) -> int:
+        """Generates a random hour weighted towards typical waking/posting hours."""
         mean_hour, std_dev = 14.5, 3.5
         hour = np.random.normal(mean_hour, std_dev)
         return int(np.clip(hour, 0, 23))
 
     def _generate_search_query_from_content(self, content: str) -> str | None:
+        """Uses a fast LLM to generate an effective search query from post content."""
         prompt = f"""
-        Analyze the following social media post content. Extract relevant keywords and suggest 2-3 popular hashtags. This will be used to search for similar posts on Google.
+        Analyze the following social media post content. Your goal is to generate a high-quality search query to find similar posts on Google.
 
         Content: "{content[:500]}..."
 
-        Provide a JSON object with "keywords" (a list of 3-5 strings) and "hashtags" (a list of 2-3 strings, including '#').
-        Example: {{"keywords": ["SaaS growth", "Q3 results"], "hashtags": ["#SaaS", "#Marketing"]}}
+        Provide a JSON object with "keywords" (a list of 4-6 descriptive strings) and "hashtags" (a list of 3-4 popular and relevant hashtags, including '#').
+        Make the keywords and hashtags specific but not overly narrow to maximize the chance of finding matches.
+        Example: {{"keywords": ["SaaS growth strategies", "Q3 results analysis", "enterprise software trends"], "hashtags": ["#SaaS", "#MarketingStrategy", "#B2B"]}}
         """
         try:
             response = self.llm_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
-                temperature=0.2,
+                temperature=0.3,
             )
             data = json.loads(response.choices[0].message.content)
             search_terms = data.get("keywords", []) + data.get("hashtags", [])
@@ -75,20 +78,20 @@ class PostSchedulerAgent:
             print(f"LLM query generation failed: {e}")
             return " ".join(content.split()[:10])
 
-    def _scrape_for_post_times(self, request: SuggestRequest) -> tuple[np.ndarray, str] | tuple[None, None]:
+    def _scrape_for_post_times(self, smart_query: str, platform: str, country_code: Optional[str] = None) -> tuple[np.ndarray, str] | tuple[None, None]:
+        """A reusable scraping function that attempts to find posts for a given location."""
         if not self.scraper_api_key:
             return None, None
 
-        smart_query = self._generate_search_query_from_content(request.content)
-        if not smart_query:
-            return None, None
-
-        platform_site = f"site:{request.platform}.com"
+        platform_site = f"site:{platform}.com"
         search_url = f'https://www.google.com/search?q={platform_site} {smart_query}'
-        country_code = self._get_country_from_timezone(request.timezone)
-        print(f"Scraping with SMART query for country '{country_code}': {search_url}")
+        
+        location_name = (country_code or "global").upper()
+        print(f"--- Attempting scrape for location '{location_name}' ---")
 
-        payload = {'api_key': self.scraper_api_key, 'url': search_url, 'country_code': country_code}
+        payload = {'api_key': self.scraper_api_key, 'url': search_url}
+        if country_code:
+            payload['country_code'] = country_code
         
         try:
             response = requests.get('http://api.scraperapi.com', params=payload, timeout=20)
@@ -100,10 +103,10 @@ class PostSchedulerAgent:
             clean_dates = [match.group(0) for text in elements_with_date if (match := date_pattern.search(text))]
 
             if not clean_dates:
-                print(f"Scraper found no relevant post dates for country '{country_code}'.")
+                print(f"Scraper found no relevant post dates for location '{location_name}'.")
                 return None, None
 
-            print(f"Found and cleaned date strings: {clean_dates}")
+            print(f"Found {len(clean_dates)} date strings for location '{location_name}'.")
             heatmap = np.zeros((7, 24))
             found_times = []
             
@@ -115,31 +118,30 @@ class PostSchedulerAgent:
                         post_time = post_time.replace(hour=realistic_hour)
                         heatmap[post_time.weekday(), post_time.hour] += 1
                         found_times.append(post_time)
-                except Exception as e:
-                    print(f"--> Warning: Could not parse date string '{date_str}'. Error: {e}")
+                except Exception:
+                    pass
 
             if np.sum(heatmap) > 0:
-                weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-                day_counts = Counter(weekdays[t.weekday()] for t in found_times)
+                day_counts = Counter(t.strftime('%A') for t in found_times)
                 most_common_day = day_counts.most_common(1)[0][0]
                 
                 explanation = (
-                    f"Analysis is based on {len(found_times)} similar posts found in the target region ({country_code.upper()}). "
-                    f"The most frequent day for this content was {most_common_day}, with engagement peaking in the afternoon and evening. "
+                    f"Analysis is based on {len(found_times)} similar posts found in the '{location_name}' region. "
+                    f"The most frequent day for this content was {most_common_day}, with engagement peaking in the afternoon/evening. "
                     "The heatmap reflects these localized trends."
                 )
                 
                 heatmap = heatmap / np.max(heatmap)
                 return np.clip(heatmap, 0.05, 1.0), explanation
             else:
-                print("--> Warning: Found date strings but failed to parse any into valid dates.")
                 return None, None
         except Exception as e:
-            print(f"Web scraping request failed: {e}")
+            print(f"Web scraping request failed for location '{location_name}': {e}")
             return None, None
 
     def _generate_heuristic_heatmap(self, platform: str, content_type: str) -> np.ndarray:
-        print("Generating heatmap using heuristic rules.")
+        """Generates a basic heatmap based on general platform knowledge (Final fallback method)."""
+        print("--- All scraping attempts failed. Falling back to heuristic rules. ---")
         heatmap = np.full((7, 24), 0.1)
         weekend_days, weekdays = [5, 6], [0, 1, 2, 3, 4]
         heatmap[:, 12:14] += 0.2
@@ -154,7 +156,9 @@ class PostSchedulerAgent:
         return np.clip(heatmap, 0, 1)
 
     def _get_llm_suggestion(self, request: SuggestRequest, top_slots: list[Slot], source: str) -> dict | None:
+        """Queries a powerful LLM to get a refined suggestion and a structured reason."""
         top_slots_str = "\n".join([f"- Day {s.weekday} at {s.hour_24}:00 (Score: {s.score:.2f})" for s in top_slots])
+        
         prompt = f"""
         You are an expert social media strategist. Analyze a post and suggest the best time to publish it.
 
@@ -192,13 +196,30 @@ class PostSchedulerAgent:
         return None
 
     def suggest_best_time(self, request: SuggestRequest) -> SuggestResponse:
-        data_source = "scraped_web_data"
-        heatmap, explanation = self._scrape_for_post_times(request)
+        """Main method to orchestrate the time suggestion process with a multi-step fallback."""
+        smart_query = self._generate_search_query_from_content(request.content)
+        heatmap, explanation = None, None
 
+        if smart_query:
+            # Attempt 1: Targeted Search (Specific Country)
+            targeted_country = self._get_country_from_timezone(request.timezone)
+            heatmap, explanation = self._scrape_for_post_times(smart_query, request.platform, country_code=targeted_country)
+
+            # Attempt 2: Broadened Search (US as fallback)
+            if heatmap is None and targeted_country != 'us':
+                heatmap, explanation = self._scrape_for_post_times(smart_query, request.platform, country_code='us')
+            
+            # Attempt 3: Global Search
+            if heatmap is None:
+                heatmap, explanation = self._scrape_for_post_times(smart_query, request.platform, country_code=None)
+
+        # Final Fallback: Heuristics
         if heatmap is None:
             data_source = "general_heuristics"
             heatmap = self._generate_heuristic_heatmap(request.platform, request.content_type)
             explanation = "Could not find enough specific data online. This heatmap is based on general engagement patterns for this platform."
+        else:
+            data_source = "scraped_web_data"
         
         heatmap_list = heatmap.tolist()
         slots = [Slot(weekday=w, hour_24=h, score=heatmap[w, h]) for w in range(7) for h in range(24)]
@@ -216,12 +237,10 @@ class PostSchedulerAgent:
         if request.strategy == "llm" and request.content:
             llm_result = self._get_llm_suggestion(request, top_slots, data_source.replace('_', ' '))
             if llm_result:
-                # --- THIS BLOCK IS NOW CORRECTED ---
                 llm_slot_data = llm_result['best_slot']
                 best_slot = Slot(weekday=llm_slot_data['weekday'], hour_24=llm_slot_data['hour_24'], score=1.0)
                 reason = StructuredReason.parse_obj(llm_result['reason'])
                 heatmap_list[best_slot.weekday][best_slot.hour_24] = 1.0
-                # -------------------------------------
 
         target_tz = pytz.timezone(request.timezone)
         now_in_tz = datetime.now(target_tz)

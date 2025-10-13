@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 // -----------------------------
 // Types
@@ -100,9 +100,30 @@ export default function PostSchedulerPage() {
   const [dataSourceExplanation, setDataSourceExplanation] = useState<string | null>(null);
   const [reason, setReason] = useState<StructuredReason | null>(null);
 
+  // --- NEW: Dynamic loading messages for better UX ---
+  const LOADING_MESSAGES = [
+    "Analyzing your content...",
+    "Searching for similar posts...",
+    "Checking local trends...",
+    "Expanding search to global data...",
+    "Finalizing with AI analysis...",
+  ];
+
+  useEffect(() => {
+    if (loading) {
+      setMessage(LOADING_MESSAGES[0]);
+      let messageIndex = 1;
+      const interval = setInterval(() => {
+        setMessage(LOADING_MESSAGES[messageIndex % LOADING_MESSAGES.length]);
+        messageIndex++;
+      }, 4000);
+      return () => clearInterval(interval);
+    }
+  }, [loading]);
+
   const onSuggest = async (useLLM = true) => {
     setLoading(true);
-    setMessage("Analyzing…");
+    // Initial message is set by the useEffect hook
     try {
       const data = await suggestBestTime({ platform, content_type: contentType, timezone, content, strategy: useLLM ? "llm" : "heuristic", });
       setBestISO(data.best_iso_utc);
@@ -143,14 +164,13 @@ export default function PostSchedulerPage() {
         </header>
 
         <section className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          {/* --- THIS IS THE CORRECTED LEFT COLUMN WITH INPUT FIELDS --- */}
           <div className="bg-slate-800/60 rounded-2xl p-6 shadow-soft backdrop-blur-sm border border-white/5">
             <h2 className="text-xl font-semibold mb-4">Compose & Preferences</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
               <div>
                 <label className="block text-sm text-slate-300 mb-1">Platform</label>
                 <select className="w-full rounded-xl bg-slate-900/60 border border-white/10 px-3 py-2" value={platform} onChange={(e) => setPlatform(e.target.value as Platform)}>
-                  {PLATFORMS.map((p) => ( <option key={p}>{p}</option> ))}
+                  {PLATFORMS.map((p) => ( <option key={p}>{p}</option>))}
                 </select>
               </div>
               <div>
@@ -202,7 +222,6 @@ export default function PostSchedulerPage() {
             )}
           </div>
 
-          {/* Right Column */}
           <div className="space-y-6">
             <div className="bg-slate-800/60 rounded-2xl p-6 shadow-soft border border-white/5">
               <h2 className="text-xl font-semibold mb-3">Weekly Engagement Heatmap</h2>
