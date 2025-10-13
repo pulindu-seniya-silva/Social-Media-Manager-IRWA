@@ -11,8 +11,6 @@ from slowapi.util import get_remote_address
 from slowapi.middleware import SlowAPIMiddleware
 
 # ✅ Import routers directly from their files (modules)
-# from app.routes import router as api_router
-from app.routes.post_scheduler_routes import router as post_scheduler_router
 
 from dotenv import load_dotenv
 load_dotenv() 
@@ -41,7 +39,6 @@ def health():
 
 # Mount routers
 # app.include_router(api_router, prefix="/api")
-app.include_router(post_scheduler_router)
 # MongoDB database routes - added by pulindu
 from app.routes.chat_routes import router as chat_router
 app.include_router(chat_router)
@@ -57,7 +54,10 @@ app.include_router(content_moderator_router, prefix="/moderator")
 # backend/app/routes/main.py
 from .routes.engagement import router as engagement_router
 
-app = FastAPI(title="Engagement Analyzer Agent")
+from app.routes import post_scheduler_routes
+app.include_router(post_scheduler_routes.router)
+
+# app = FastAPI(title="Engagement Analyzer Agent")
 
 app.add_middleware(
     CORSMiddleware,

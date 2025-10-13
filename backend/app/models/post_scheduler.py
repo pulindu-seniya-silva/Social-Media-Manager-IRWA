@@ -1,27 +1,31 @@
-# backend/app/models/post_scheduler.py
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
 
-Platform = Literal["Instagram","Facebook","X (Twitter)","TikTok","LinkedIn","YouTube"]
+# Define a literal type for platforms to match the frontend
+Platform = Literal["Instagram", "Facebook", "X (Twitter)", "TikTok", "LinkedIn", "YouTube"]
+Strategy = Literal["heuristic", "llm"]
 
 class SuggestRequest(BaseModel):
+    """The request body for the /suggest endpoint."""
     platform: Platform
-    # Default "any" to match the backend logic and avoid 422s on GET
-    content_type: str = Field("any", description="e.g., photo, reel, video, text, link")
-    timezone: str = "Asia/Colombo"
+    content_type: str
+    timezone: str
+    content: str  # The actual text content of the post
     days_ahead: int = 7
-    strategy: Literal["heuristic", "llm"] = "heuristic"  # "llm" adds an LLM-written reason
+    strategy: Strategy = "llm"
 
 class Slot(BaseModel):
-    weekday: int                # 0=Mon ... 6=Sun (python style)
-    hour_24: int                # 0..23
+    """Represents a single time slot with an engagement score."""
+    weekday: int  # 0=Mon, 1=Tue, ..., 6=Sun
+    hour_24: int
     score: float
 
 class SuggestResponse(BaseModel):
-    best_iso_utc: str           # ISO UTC timestamp for the next occurrence
-    best_local_pretty: str      # human friendly in the requested timezone
+    """The response body for the /suggest endpoint."""
+    best_iso_utc: str
+    best_local_pretty: str
     platform: Platform
     content_type: str
     top_slots: List[Slot]
-    heatmap: List[List[float]]  # 7x24 normalized grid (Mon..Sun × 0..23)
+    heatmap: List[List[float]]  # A 7x24 grid
     reason: Optional[str] = None

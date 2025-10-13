@@ -49,6 +49,7 @@ async function suggestBestTime(
     platform: Platform;
     content_type: string;
     timezone: string;
+    content: string;
     days_ahead?: number;
     strategy?: "heuristic" | "llm";
   }
@@ -205,6 +206,7 @@ export default function PostSchedulerPage() {
         platform,
         content_type: contentType,
         timezone,
+        content,
         strategy: useLLM ? "llm" : "heuristic",
       });
       setBestISO(data.best_iso_utc);
