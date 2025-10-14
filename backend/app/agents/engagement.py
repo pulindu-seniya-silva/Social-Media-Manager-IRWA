@@ -1,151 +1,170 @@
-# backend/app/agents/engagement.py
 import os
+import io
 import json
-import re
-from typing import List, Dict, Any
-from openai import OpenAI
+import pandas as pd
+from datetime import datetime
+from typing import List, Dict, Any, Optional
 
-# Load API key from env (use python-dotenv elsewhere)
+from app.utils import google_search
+from openai import OpenAI
+from ..models.engagement import AnalysisReport, TopPostAnalysis
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
-# Simple file cache so you don't call the LLM repeatedly during development
-CACHE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "sentiment_cache.json")
-os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
-try:
-    with open(CACHE_PATH, "r", encoding="utf-8") as f:
-        cache = json.load(f)
-except Exception:
-    cache = {}
-    with open(CACHE_PATH, "w", encoding="utf-8") as f:
-        json.dump(cache, f)
-
-def _save_cache():
-    with open(CACHE_PATH, "w", encoding="utf-8") as f:
-        json.dump(cache, f, ensure_ascii=False, indent=2)
-
-def _extract_json_from_text(text: str):
-    # Try to pull the first JSON object / array from LLM text
-    m = re.search(r'(\[.*\]|\{.*\})', text, re.S)
-    if not m:
-        return None
-    try:
-        return json.loads(m.group(0))
-    except Exception:
-        return None
-
-def classify_with_llm(comments: List[str]) -> List[Dict[str, str]]:
-    """
-    Batched LLM classification. Returns list of {"comment": ..., "sentiment": ...}
-    If no API key found or the LLM fails, raises an exception (caller will fallback).
-    """
-    if not comments:
-        return []
-
-    # 1) Check cache
-    out = [None] * len(comments)
-    to_query = []
-    idx_map = []
-    for i, c in enumerate(comments):
-        key = c.strip()
-        if key in cache:
-            out[i] = {"comment": c, "sentiment": cache[key]}
-        else:
-            idx_map.append(i)
-            to_query.append(c)
-
-    # Nothing to query
-    if not to_query or client is None:
-        # Fill missing with fallback (this case should not happen if OpenAI API is set)
-        for i, item in enumerate(out):
-            if item is None:
-                out[i] = {"comment": comments[i], "sentiment": "Neutral"}
-        return out
-
-    # 2) Build a clear system prompt telling LLM to return strict JSON only
-    system_msg = {
-        "role": "system",
-        "content": (
-            "You are a sentiment classifier. You will be given a JSON array of strings (comments). "
-            "Return ONLY a JSON array of objects in the same order, each object having keys "
-            "\"comment\" and \"sentiment\" where sentiment is exactly one of: Positive, Neutral, Negative. "
-            "Do not include extra explanation text — only the JSON array."
-        )
+def get_column_mapping(headers: List[str]) -> Dict[str, Optional[str]]:
+    """A fast, reliable manual mapping for common column names."""
+    mapping = {
+        "content": None, "date": None, "likes": None, "comments": None,
+        "shares": None, "engagement_rate": None
     }
-    user_msg = {"role": "user", "content": json.dumps(to_query, ensure_ascii=False)}
+    lower_headers = {h.strip().lower(): h for h in headers}
+    variations = {
+        "content": ["post title", "title", "content", "text"],
+        "date": ["created date", "date", "published at"],
+        "likes": ["likes", "reactions"],
+        "comments": ["comments"],
+        "shares": ["reposts", "shares"],
+        "engagement_rate": ["engagement rate"]
+    }
+    for key, alts in variations.items():
+        for alt in alts:
+            if alt in lower_headers:
+                mapping[key] = lower_headers[alt]
+                break
+    return mapping
 
-    # 3) Call the LLM (model can be changed)
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",  # Change model if needed
-        messages=[system_msg, user_msg],
-        temperature=0.0
+def _perform_external_search(keywords: List[str], date_obj: datetime) -> Dict[str, Any]:
+    if not date_obj:
+        return {"context": "Analysis skipped: Date missing for the top post.", "urls": []}
+    try:
+        date_query = date_obj.strftime("%B %d %Y")
+        queries = [f"{' '.join(keywords)} news {date_query}"] if keywords else []
+        queries.append(f"social media trends for {date_obj.strftime('%B %Y')}")
+        search_results = google_search.search(queries=queries)
+        snippets = [res.snippet for result_set in search_results for res in result_set.results]
+        urls = [res.url for result_set in search_results for res in result_set.results]
+        context = " ".join(snippets) if snippets else "No relevant external context found."
+        return {"context": context, "urls": list(set(urls))}
+    except Exception as e:
+        return {"context": f"Could not retrieve external context: {e}", "urls": []}
+
+def _generate_strategic_recommendations(top_post_data: Dict, external_context: str) -> str:
+    if not client: return "OpenAI API key is not configured."
+    system_prompt = (
+        "You are an expert Social Media Strategist. Your task is to analyze a top-performing social media post "
+        "in light of external world events to provide concise, actionable recommendations."
     )
-    raw = resp.choices[0].message.content
-
-    parsed = _extract_json_from_text(raw)
-    if parsed is None:
-        # Try a fallback parse attempt; if still fails, raise so caller can fallback
-        raise RuntimeError("Failed to parse JSON from LLM response")
-
-    # Normalize parsed result
-    normalized = []
-    if isinstance(parsed, list) and parsed and isinstance(parsed[0], str):
-        # If LLM returned list of labels ["Positive","Negative"...] => map them to comments
-        for c, label in zip(to_query, parsed):
-            normalized.append({"comment": c, "sentiment": label.strip().capitalize()})
-    else:
-        # Assume list of objects
-        for item in parsed:
-            if isinstance(item, dict):
-                label = item.get("sentiment") or item.get("label") or item.get("sent")
-                label = (label.strip().capitalize() if isinstance(label, str) else "Neutral")
-                # Prefer the comment returned by LLM (but keep our original if missing)
-                comment_text = item.get("comment") if item.get("comment") else to_query[len(normalized)]
-                normalized.append({"comment": comment_text, "sentiment": label})
-            else:
-                normalized.append({"comment": str(item), "sentiment": "Neutral"})
-
-    # Store results in cache and return
-    for idx, res_item in zip(idx_map, normalized):
-        out[idx] = res_item
-        cache_key = res_item["comment"].strip()
-        cache[cache_key] = res_item["sentiment"]
-    _save_cache()
-    return out
-
-def analyze_post(payload: Dict[str, Any]) -> Dict[str, Any]:
-    # Compute engagement
-    likes = int(payload.get("likes", 0))
-    shares = int(payload.get("shares", 0))
-    reach = max(1, int(payload.get("reach", 1)))
-    comments = payload.get("comments", []) or []
-    follower_change = int(payload.get("follower_change", 0))
-
-    engagement_rate = round(((likes + shares + len(comments)) / reach) * 100, 2)
-
-    # Only use LLM for sentiment analysis
+    user_prompt = f"""
+    Analyze the following TOP-PERFORMING social media post and the external context provided.
+    ## Top Post Data:
+    - Content: "{top_post_data.get('title')}"
+    - Engagement Rate: {top_post_data.get('engagement_rate'):.2f}%
+    - Keywords from Content: {top_post_data.get('keywords')}
+    ## External Context (News & Trends from around the post date):
+    {external_context}
+    ## Your Task:
+    Based on all the information, provide a strategic recommendation.
+    1.  Start with a one-sentence conclusion explaining WHY the post was likely successful, linking its topic to the external context.
+    2.  Provide two concrete, actionable recommendations for the Content Creator agent to replicate this success. Frame them as direct instructions.
+    """
     try:
-        sentiments = classify_with_llm(comments)
-    except Exception:
-        sentiments = [{"comment": c, "sentiment": "Neutral"} for c in comments]  # If LLM fails, fallback to Neutral
+        response = client.chat.completions.create(model="gpt-4o", messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}])
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Error generating recommendations: {e}"
 
-    breakdown = {"positive": 0, "neutral": 0, "negative": 0}
-    for s in sentiments:
-        lab = (s.get("sentiment") or "Neutral").lower()
-        if lab.startswith("pos"):
-            breakdown["positive"] += 1
-        elif lab.startswith("neg"):
-            breakdown["negative"] += 1
+# --- Main Entry Point (UPGRADED to handle multiple worksheets) ---
+def analyze_report_file(file_content: bytes, filename: str) -> AnalysisReport:
+    df = None
+    try:
+        if filename.endswith('.csv'):
+            # For CSV, we assume the first descriptive row might exist and skip it.
+            # Pandas is often smart enough, but header=1 is a good hint for these files.
+            try:
+                df = pd.read_csv(io.BytesIO(file_content), header=1)
+            except Exception:
+                # If that fails, try reading normally
+                df = pd.read_csv(io.BytesIO(file_content))
+        elif filename.endswith('.xlsx') or filename.endswith('.xls'):
+            xls_engine = 'xlrd' if filename.endswith('.xls') else 'openpyxl'
+            xls_file = pd.ExcelFile(io.BytesIO(file_content), engine=xls_engine)
+            
+            sheet_name_to_load = None
+            for sheet in xls_file.sheet_names:
+                # Read the first few rows to inspect headers
+                # We tell pandas to expect the header on the second row (index 1)
+                sheet_df = pd.read_excel(xls_file, sheet_name=sheet, header=1, nrows=1)
+                headers = [str(h).strip().lower() for h in sheet_df.columns]
+                
+                if any(h in ["post title", "title", "content"] for h in headers):
+                    sheet_name_to_load = sheet
+                    break
+            
+            if not sheet_name_to_load:
+                raise ValueError("Could not find a valid worksheet with a 'Post title' column in the Excel file. Please ensure the file contains a sheet with detailed post data.")
+
+            df = pd.read_excel(xls_file, sheet_name=sheet_name_to_load, header=1)
         else:
-            breakdown["neutral"] += 1
+            raise ValueError("Unsupported file type.")
+    except Exception as e:
+        raise ValueError(f"Failed to read or parse the file. It may be corrupted, password-protected, or in an unexpected format. Error: {e}")
 
-    return {
-        "postId": payload.get("postId"),
-        "engagementRate": engagement_rate,
-        "likes": likes,
-        "shares": shares,
-        "reach": reach,
-        "follower_change": follower_change,
-        "sentiments": sentiments,       # list of {comment, sentiment}
-        "breakdown": breakdown
-    }
+    if df.empty:
+        raise ValueError("The identified worksheet or CSV file contains no data.")
+
+    df.columns = [str(col).strip() for col in df.columns]
+    
+    column_map = get_column_mapping(list(df.columns))
+    if not column_map.get("content"):
+        raise ValueError("Invalid file. The agent requires a 'Post title' or similar column. Please upload the 'All posts' report, not the 'Metrics' summary.")
+
+    posts = df.to_dict(orient='records')
+    engagement_key = column_map.get("engagement_rate")
+    if not engagement_key:
+        raise ValueError("Agent could not identify an 'engagement_rate' column in the file.")
+
+    for post in posts:
+        rate_val = str(post.get(engagement_key, '0'))
+        # Handle cases where rate might be non-numeric
+        try:
+            post['_clean_engagement'] = float(rate_val.replace('%', '').strip())
+        except (ValueError, TypeError):
+            post['_clean_engagement'] = 0.0
+
+    top_post = max(posts, key=lambda p: p['_clean_engagement'])
+    
+    total_engagement = sum(p['_clean_engagement'] for p in posts)
+    avg_engagement = total_engagement / len(posts)
+
+    post_title = str(column_map.get("content") and top_post.get(column_map["content"], "N/A"))
+    date_val = column_map.get("date") and top_post.get(column_map["date"])
+    created_date_obj = pd.to_datetime(date_val).to_pydatetime() if pd.notna(date_val) else None
+
+    likes = int(float(column_map.get("likes") and top_post.get(column_map["likes"], 0)))
+    comments = int(float(column_map.get("comments") and top_post.get(column_map["comments"], 0)))
+    shares = int(float(column_map.get("shares") and top_post.get(column_map["shares"], 0)))
+    engagement_rate = top_post['_clean_engagement']
+    
+    keywords = [tag.strip() for tag in post_title.split() if tag.startswith('#')]
+    analysis_data = { "title": post_title, "engagement_rate": engagement_rate, "keywords": keywords }
+
+    search_result = _perform_external_search(keywords, created_date_obj)
+    recommendations = _generate_strategic_recommendations(analysis_data, search_result['context'])
+    
+    top_post_analysis = TopPostAnalysis(
+        post_title=post_title,
+        engagement_rate=engagement_rate,
+        likes=likes,
+        comments=comments,
+        shares=shares,
+        external_context_summary=search_result['context'],
+        relevant_urls=search_result['urls'],
+        strategic_recommendations=recommendations
+    )
+
+    return AnalysisReport(
+        total_posts_analyzed=len(posts),
+        average_engagement_rate=avg_engagement,
+        top_performing_post=top_post_analysis
+    )
