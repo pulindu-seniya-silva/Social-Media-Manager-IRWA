@@ -23,7 +23,7 @@ class StructuredReason(BaseModel):
     headline: str
     points: List[ReasonPoint]
 
-# --- API Request and Response Models ---
+# --- API Request and Response Models for Suggestion ---
 class SuggestRequest(BaseModel):
     platform: str
     content_type: str
@@ -42,3 +42,14 @@ class SuggestResponse(BaseModel):
     heatmap: List[List[float]]
     reason: StructuredReason
     found_posts: Optional[List[FoundPostSummary]] = None
+
+# --- NEW: Models for Scheduling (Mocked) ---
+class ScheduleRequest(BaseModel):
+    content: str
+    platform: str
+    schedule_at_iso: str # The UTC ISO 8601 string for when to post
+
+class ScheduleResponse(BaseModel):
+    status: str
+    message: str
+    scheduled_at: Optional[str] = None

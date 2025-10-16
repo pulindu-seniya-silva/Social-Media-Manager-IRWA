@@ -1,11 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation"; // Import useRouter
 
-// -----------------------------
-// Types
-// -----------------------------
+// --- Types ---
 type Platform = "Instagram" | "Facebook" | "X (Twitter)" | "TikTok" | "LinkedIn" | "YouTube";
 interface FoundPostSummary { snippet: string; time_ago: string; predicted_engagement_score: number; justification: string; }
 interface ReasonPoint { icon: string; title: string; text: string; }
@@ -19,12 +17,12 @@ interface SuggestResponse {
   reason?: StructuredReason | null;
   found_posts?: FoundPostSummary[] | null;
 }
-type QueueItem = { id: string; platform: Platform; timezone: string; contentPreview: string; scheduledAt: string; status: "scheduled" | "posted" | "cancelled"; };
+// Add this new type for our session storage item
+type ScheduledItem = { id: string; platform: Platform; content: string; scheduledAt: string; timezone: string; };
 
-// -----------------------------
-// API helpers
-// -----------------------------
+// --- API Helpers ---
 const BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+
 async function suggestBestTime(payload: any): Promise<SuggestResponse> {
   const res = await fetch(`${BASE}/post-scheduler/suggest`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), cache: "no-store",
@@ -33,9 +31,16 @@ async function suggestBestTime(payload: any): Promise<SuggestResponse> {
   return await res.json();
 }
 
-// -----------------------------
-// Components
-// -----------------------------
+async function schedulePost(payload: { content: string; platform: string; schedule_at_iso: string }): Promise<any> {
+  const res = await fetch(`${BASE}/post-scheduler/schedule`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Scheduling failed");
+  return data;
+}
+
+// --- Components ---
 function Heatmap({ heatmap, highlight }: { heatmap: number[][]; highlight?: { weekday: number; hour_24: number } | null }) {
     const WEEKS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     return (
@@ -60,33 +65,25 @@ function Heatmap({ heatmap, highlight }: { heatmap: number[][]; highlight?: { we
     );
 }
 
-// -----------------------------
-// Page Component
-// -----------------------------
 const TZ_OPTIONS = [ { id: "Asia/Colombo", label: "Asia/Colombo (UTC+5:30)" }, { id: "Asia/Kolkata", label: "Asia/Kolkata (UTC+5:30)" }, { id: "Europe/London", label: "Europe/London (UTC±0)" }, { id: "America/New_York", label: "America/New_York (UTC-5)" }, ];
 const PLATFORMS: Platform[] = [ "Instagram", "Facebook", "X (Twitter)", "TikTok", "LinkedIn", "YouTube" ];
 const CONTENT_TYPES = [ "text", "photo", "video", "reel", "short", "link", "carousel", "story", "any" ];
 
-function formatLocal(d: Date, tz: string) {
-    const opts: Intl.DateTimeFormatOptions = { timeZone: tz, hour12: true, hour: "2-digit", minute: "2-digit", year: "numeric", month: "short", day: "2-digit", weekday: "short", };
-    return new Intl.DateTimeFormat(undefined, opts).format(d);
-}
-
-
 function SchedulerBody() {
   const searchParams = useSearchParams();
-  const [platform, setPlatform] = useState<Platform>("Instagram");
-  const [contentType, setContentType] = useState<string>("reel");
+  const router = useRouter(); // Initialize router
+  const [platform, setPlatform] = useState<Platform>("LinkedIn");
+  const [contentType, setContentType] = useState<string>("text");
   const [timezone, setTimezone] = useState<string>("Asia/Colombo");
   const [content, setContent] = useState<string>("");
   const [hashtags, setHashtags] = useState<string>("");
   const [message, setMessage] = useState<string>("");
-  const [queue, setQueue] = useState<QueueItem[]>([]);
   const [bestISO, setBestISO] = useState<string | null>(null);
   const [bestPretty, setBestPretty] = useState<string | null>(null);
   const [heatmap, setHeatmap] = useState<number[][] | null>(null);
   const [highlight, setHighlight] = useState<{ weekday: number; hour_24: number } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isScheduling, setIsScheduling] = useState(false);
   const [dataSourceExplanation, setDataSourceExplanation] = useState<string | null>(null);
   const [reason, setReason] = useState<StructuredReason | null>(null);
   const [foundPosts, setFoundPosts] = useState<FoundPostSummary[] | null>(null);
@@ -112,9 +109,7 @@ function SchedulerBody() {
     if (caption) setContent(caption);
     if (tags) setHashtags(tags);
     if (plat && PLATFORMS.includes(plat as Platform)) setPlatform(plat as Platform);
-    if (signals) {
-      try { setModerationSignals(JSON.parse(signals)); } catch {}
-    }
+    if (signals) { try { setModerationSignals(JSON.parse(signals)); } catch {} }
   }, [searchParams]);
 
   const onSuggest = async (useLLM = true) => {
@@ -139,13 +134,45 @@ function SchedulerBody() {
     }
   };
 
-  const onSchedule = () => {
-    if (!content.trim()) { setMessage("Add content first."); return; }
-    if (!bestISO) { setMessage("Click Suggest first."); return; }
+  const onSchedule = async () => {
     const fullContent = `${content} ${hashtags.split(",").map(t => `#${t.trim()}`).join(" ")}`.trim();
-    const item: QueueItem = { id: `${Date.now()}`, platform, timezone, contentPreview: fullContent.length > 80 ? fullContent.slice(0, 77) + "…" : fullContent, scheduledAt: bestISO, status: "scheduled", };
-    setQueue((q) => [...q, item].sort( (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime() ) );
-    setMessage("✅ Added to schedule.");
+    if (!fullContent) { setMessage("Cannot schedule empty content."); return; }
+    if (!bestISO) { setMessage("Please suggest a time first to schedule."); return; }
+
+    setIsScheduling(true);
+    setMessage(`Scheduling for ${platform} (Demonstration)...`);
+    try {
+      const result = await schedulePost({
+        content: fullContent,
+        platform: platform,
+        schedule_at_iso: bestISO,
+      });
+
+      // Save to session storage and navigate
+      const newItem: ScheduledItem = {
+        id: `${Date.now()}`,
+        platform: platform,
+        content: fullContent,
+        scheduledAt: bestISO,
+        timezone: timezone,
+      };
+      
+      const existingPostsRaw = sessionStorage.getItem('mockScheduledPosts');
+      const existingPosts = existingPostsRaw ? JSON.parse(existingPostsRaw) : [];
+      const updatedPosts = [...existingPosts, newItem].sort((a,b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+      
+      sessionStorage.setItem('mockScheduledPosts', JSON.stringify(updatedPosts));
+      
+      setMessage(result.message || "Scheduled successfully!");
+
+      // Navigate to the new page
+      router.push('/schedule_view');
+
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Failed to schedule.");
+    } finally {
+      setIsScheduling(false);
+    }
   };
 
   return (
@@ -155,7 +182,7 @@ function SchedulerBody() {
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
             <div>
               <h1 className="text-3xl md:text-4xl font-bold tracking-tight">⏲️ Post Scheduler</h1>
-              <p className="text-slate-300 mt-2 max-w-2xl">Find the optimal time to post based on real-world data.</p>
+              <p className="text-slate-300 mt-2 max-w-2xl">Find the optimal time and schedule your post.</p>
             </div>
             {message && <div className="bg-emerald-500/15 text-emerald-200 border border-emerald-500/30 rounded-xl px-4 py-2">{message}</div>}
           </div>
@@ -171,11 +198,7 @@ function SchedulerBody() {
                   <div className="text-lg">🛡️</div>
                   <div>
                     <div className="font-semibold text-emerald-200">Moderation Passed</div>
-                    <div className="text-xs text-slate-300">
-                      Toxicity: {((moderationSignals.toxicity || 0) * 100).toFixed(0)}%
-                      &nbsp;&middot;&nbsp;
-                      Polarity: {((moderationSignals.polarity || 0) * 100).toFixed(0)}%
-                    </div>
+                    <div className="text-xs text-slate-300">Toxicity: {((moderationSignals.toxicity || 0) * 100).toFixed(0)}% &middot; Polarity: {((moderationSignals.polarity || 0) * 100).toFixed(0)}%</div>
                   </div>
                 </div>
               </div>
@@ -188,9 +211,17 @@ function SchedulerBody() {
             </div>
             <div className="mb-4"><label className="block text-sm text-slate-300 mb-1">Post Caption</label><textarea value={content} onChange={(e) => setContent(e.target.value)} className="w-full min-h-[120px] rounded-xl bg-slate-900/60 border border-white/10 p-3" placeholder="Paste your caption..." /></div>
             <div className="mb-4"><label className="block text-sm text-slate-300 mb-1">Hashtags</label><input value={hashtags} onChange={(e) => setHashtags(e.target.value)} className="w-full rounded-xl bg-slate-900/60 border border-white/10 px-3 py-2" placeholder="discovery, socialmedia, marketing" /></div>
+            
             <div className="flex flex-wrap gap-3">
-              <button onClick={() => onSuggest(true)} disabled={loading} className="px-4 py-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:opacity-95 disabled:opacity-50">{loading ? "Analyzing…" : "✨ Suggest Best Time"}</button>
-              <button onClick={onSchedule} className="px-4 py-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500">✅ Add to Queue</button>
+              <button onClick={() => onSuggest(true)} disabled={loading || isScheduling} className="px-4 py-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:opacity-95 disabled:opacity-50">{loading ? "Analyzing…" : "✨ Suggest Best Time"}</button>
+              <button 
+                onClick={onSchedule}
+                disabled={loading || isScheduling || !bestISO}
+                title={!bestISO ? "Suggest a time first" : `Schedule this post for ${platform}`}
+                className="px-4 py-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50"
+              >
+                {isScheduling ? "Scheduling..." : `✅ Schedule Post`}
+              </button>
             </div>
 
             {bestISO && reason && (
@@ -234,38 +265,6 @@ function SchedulerBody() {
                 </div>
               </div>
             )}
-            
-            {/* --- THIS IS THE RESTORED QUEUE SECTION --- */}
-            <div className="bg-slate-800/60 rounded-2xl p-6 shadow-soft border border-white/5">
-              <h2 className="text-xl font-semibold mb-4">Scheduled Queue</h2>
-              {queue.length === 0 ? ( <div className="text-slate-400 text-sm">No items yet. Click "Add to Queue" to schedule a post.</div> ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="text-slate-300">
-                      <tr className="text-left border-b border-white/10">
-                        <th className="py-2 pr-3 font-normal">When</th>
-                        <th className="py-2 pr-3 font-normal">Platform</th>
-                        <th className="py-2 pr-3 font-normal">Content</th>
-                        <th className="py-2 pr-3 font-normal">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {queue.map((q) => (
-                        <tr key={q.id} className="border-b border-white/5">
-                          <td className="py-2 pr-3 text-slate-200">
-                            {formatLocal(new Date(q.scheduledAt), q.timezone)}
-                            <div className="text-[10px] text-slate-400">{q.timezone}</div>
-                          </td>
-                          <td className="py-2 pr-3">{q.platform}</td>
-                          <td className="py-2 pr-3 text-slate-300">{q.contentPreview}</td>
-                          <td className="py-2 pr-3"><span className="px-2 py-1 rounded-lg text-xs bg-amber-500/20 text-amber-200">{q.status}</span></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
           </div>
         </section>
       </div>
