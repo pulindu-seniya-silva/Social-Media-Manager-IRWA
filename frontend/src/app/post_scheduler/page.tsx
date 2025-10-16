@@ -8,6 +8,7 @@ type Platform = "Instagram" | "Facebook" | "X (Twitter)" | "TikTok" | "LinkedIn"
 interface FoundPostSummary { snippet: string; time_ago: string; predicted_engagement_score: number; justification: string; }
 interface ReasonPoint { icon: string; title: string; text: string; }
 interface StructuredReason { headline: string; points: ReasonPoint[]; }
+
 interface SuggestResponse {
   best_iso_utc: string;
   best_local_pretty: string;
@@ -19,7 +20,7 @@ interface SuggestResponse {
 }
 type ScheduledItem = { id: string; platform: Platform; content: string; scheduledAt: string; timezone: string; };
 
-// --- FIX: Add specific request types ---
+// --- FIX: Add specific request and response types ---
 interface SuggestRequest {
   platform: string;
   content_type: string;
@@ -32,11 +33,16 @@ interface ScheduleRequest {
   platform: string;
   schedule_at_iso: string;
 }
+interface ScheduleResponse {
+  status: string;
+  message: string;
+  scheduled_at?: string | null;
+}
+
 
 // --- API Helpers ---
 const BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
-// --- FIX: Use specific type instead of 'any' ---
 async function suggestBestTime(payload: SuggestRequest): Promise<SuggestResponse> {
   const res = await fetch(`${BASE}/post-scheduler/suggest`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), cache: "no-store",
@@ -45,8 +51,8 @@ async function suggestBestTime(payload: SuggestRequest): Promise<SuggestResponse
   return await res.json();
 }
 
-// --- FIX: Use specific type instead of 'any' ---
-async function schedulePost(payload: ScheduleRequest): Promise<any> {
+// --- FIX: Use the specific ScheduleResponse type instead of 'any' ---
+async function schedulePost(payload: ScheduleRequest): Promise<ScheduleResponse> {
   const res = await fetch(`${BASE}/post-scheduler/schedule`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
   });
@@ -83,8 +89,6 @@ function Heatmap({ heatmap, highlight }: { heatmap: number[][]; highlight?: { we
 const TZ_OPTIONS = [ { id: "Asia/Colombo", label: "Asia/Colombo (UTC+5:30)" }, { id: "Asia/Kolkata", label: "Asia/Kolkata (UTC+5:30)" }, { id: "Europe/London", label: "Europe/London (UTC±0)" }, { id: "America/New_York", label: "America/New_York (UTC-5)" }, ];
 const PLATFORMS: Platform[] = [ "Instagram", "Facebook", "X (Twitter)", "TikTok", "LinkedIn", "YouTube" ];
 const CONTENT_TYPES = [ "text", "photo", "video", "reel", "short", "link", "carousel", "story", "any" ];
-
-// --- FIX: Moved constant outside the component to fix dependency warning ---
 const LOADING_MESSAGES = [ "Analyzing content...", "Searching for similar posts...", "Checking local trends...", "Expanding search...", "Finalizing with AI analysis...", ];
 
 function SchedulerBody() {
@@ -114,7 +118,7 @@ function SchedulerBody() {
       const interval = setInterval(() => { setMessage(LOADING_MESSAGES[i % LOADING_MESSAGES.length]); i++; }, 4000);
       return () => clearInterval(interval);
     }
-  }, [loading]); // The dependency array is now stable
+  }, [loading]);
 
   useEffect(() => {
     const caption = searchParams.get("caption");
