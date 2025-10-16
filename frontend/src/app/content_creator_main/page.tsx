@@ -9,7 +9,7 @@ import Link from "next/link";
 
 export default function ProductPage() {
   return (
-    <div className="min-h-screen bg-gray-50 border-t-2">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-purple-900">
       <div className="container mx-auto px-4 pt-10 pb-20">
         {/* Hero Section */}
         <div className="flex flex-col items-center justify-center mb-10">
@@ -23,10 +23,10 @@ export default function ProductPage() {
       </div>
         {/* Header */}
         <header className="mb-12 text-center -mt-3">
-          <h1 className="text-3xl md:text-4xl font-bold text-gray-900">
+          <h1 className="text-3xl md:text-4xl font-bold text-white">
             AI Agent Content Creator
           </h1>
-          <p className="mt-3 text-lg text-gray-700 max-w-2xl mx-auto">
+          <p className="mt-3 text-lg text-gray-300 max-w-2xl mx-auto">
             Harness the power of AI to generate posts, videos, images, and social media insights — all in one creative hub.
           </p>
         </header>
@@ -35,7 +35,7 @@ export default function ProductPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 -mt-6">
           {/* Card 1: Post & Image Generation */}
           <Link href="/content_creator">
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-md p-4 transition-all transform hover:scale-105 hover:shadow-2xl hover:bg-gray-100 cursor-pointer">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-md p-4 transition-all transform hover:scale-105 hover:shadow-2xl hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer">
               <div className="relative h-40 rounded-xl overflow-hidden">
                 <Image
                   src={post}
@@ -45,14 +45,14 @@ export default function ProductPage() {
                   className="rounded-xl"
                 />
               </div>
-              <h3 className="text-lg font-semibold mt-3 text-gray-900">
+              <h3 className="text-lg font-semibold mt-3 text-gray-900 dark:text-white">
                 🖌 AI Post & Image Generator
               </h3>
-              <p className="text-gray-600 mt-2 text-sm">
+              <p className="text-gray-300 mt-2 text-sm">
                 Create eye-catching posts and stunning visuals instantly using advanced AI tools.
               </p>
               <p className="mt-3 text-center">
-                <span className="text-blue-600 font-medium underline cursor-pointer hover:text-blue-800">
+                <span className="text-blue-300 font-medium underline cursor-pointer hover:text-blue-200">
                   Try Now
                 </span>
               </p>
@@ -61,7 +61,7 @@ export default function ProductPage() {
 
           {/* Card 2: Video Generation */}
           <Link href="/creator/ai-assistant">
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-md p-4 transition-all transform hover:scale-105 hover:shadow-2xl hover:bg-gray-100 cursor-pointer">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-md p-4 transition-all transform hover:scale-105 hover:shadow-2xl hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer">
               <div className="relative h-40 rounded-xl overflow-hidden">
                 <Image
                   src={video}
@@ -71,23 +71,23 @@ export default function ProductPage() {
                   className="rounded-xl"
                 />
               </div>
-              <h3 className="text-lg font-semibold mt-3 text-gray-900">
+              <h3 className="text-lg font-semibold mt-3 text-gray-900 dark:text-white">
                 🎬 AI Video Creator
               </h3>
-              <p className="text-gray-600 mt-2 text-sm">
+              <p className="text-gray-300 mt-2 text-sm">
                 Transform scripts or ideas into full videos with AI-generated scenes and outlines.
               </p>
               <p className="mt-3 text-center">
-                <span className="text-blue-600 font-medium underline cursor-pointer hover:text-blue-800">
+                <span className="text-blue-300 font-medium underline cursor-pointer hover:text-blue-200">
                   Generate Video
                 </span>
               </p>
             </div>
           </Link>
 
-          {/* Card 3: Image Analysis -> now opens content creator with image flow */}
-          <Link href="/content_creator">
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-md p-4 transition-all transform hover:scale-105 hover:shadow-2xl hover:bg-gray-100 cursor-pointer">
+          {/* Card 3: Image Analysis -> dedicated page */}
+          <Link href="/content_creator/image">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-md p-4 transition-all transform hover:scale-105 hover:shadow-2xl hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer">
               <div className="relative h-40 rounded-xl overflow-hidden">
                 <Image
                   src={image}
@@ -97,14 +97,14 @@ export default function ProductPage() {
                   className="rounded-xl"
                 />
               </div>
-              <h3 className="text-lg font-semibold mt-3 text-gray-900">
+              <h3 className="text-lg font-semibold mt-3 text-gray-900 dark:text-white">
                 🖼 AI Image Analyzer
               </h3>
-              <p className="text-gray-600 mt-2 text-sm">
+              <p className="text-gray-300 mt-2 text-sm">
                 Detect objects, text, emotions, and styles in images to optimize your content strategy.
               </p>
               <p className="mt-3 text-center">
-                <span className="text-blue-600 font-medium underline cursor-pointer hover:text-blue-800">
+                <span className="text-blue-300 font-medium underline cursor-pointer hover:text-blue-200">
                   Analyze Image
                 </span>
               </p>
@@ -113,7 +113,7 @@ export default function ProductPage() {
 
           {/* Card 4: Social Media Q&A */}
           <Link href="/creator/creative-guidance">
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-md p-4 transition-all transform hover:scale-105 hover:shadow-2xl hover:bg-gray-100 cursor-pointer">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-md p-4 transition-all transform hover:scale-105 hover:shadow-2xl hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer">
               <div className="relative h-40 rounded-xl overflow-hidden">
                 <Image
                   src={Link1}
@@ -123,14 +123,14 @@ export default function ProductPage() {
                   className="rounded-xl"
                 />
               </div>
-              <h3 className="text-lg font-semibold mt-3 text-gray-900">
+              <h3 className="text-lg font-semibold mt-3 text-gray-900 dark:text-white">
                 📱 Social Media Q&A
               </h3>
-              <p className="text-gray-600 mt-2 text-sm">
+              <p className="text-gray-300 mt-2 text-sm">
                 Provide links or posts and get AI-powered suggestions, summaries, and engagement tips.
               </p>
               <p className="mt-3 text-center">
-                <span className="text-blue-600 font-medium underline cursor-pointer hover:text-blue-800">
+                <span className="text-blue-300 font-medium underline cursor-pointer hover:text-blue-200">
                   Get Insights
                 </span>
               </p>
