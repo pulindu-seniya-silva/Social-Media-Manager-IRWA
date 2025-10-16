@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, FC, PropsWithChildren } from "react";
-import Image from "next/image"; // FIX: Import the next/image component
+import Image from "next/image";
 import {
   LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer
 } from "recharts";
@@ -50,15 +50,21 @@ type InitialAnalysisResponse = {
   posts: PostDetails[];
 };
 
-// FIX: Add a type for the API error response
 type ApiError = {
   detail?: string;
 };
 
-// FIX: Add a specific type for the Recharts Tooltip props
 interface CustomTooltipProps {
   active?: boolean;
   payload?: Array<{ payload: PostDetails }>;
+}
+
+// --- FIX: Add a specific type for the HighlightedDot component props ---
+interface HighlightedDotProps {
+  cx?: number;
+  cy?: number;
+  stroke?: string;
+  payload?: PostDetails;
 }
 
 // --- Reusable UI Components ---
@@ -112,13 +118,11 @@ const AnalysisDashboard: FC<{ initialReport: InitialAnalysisResponse }> = ({ ini
         body: JSON.stringify(selectedPost),
       });
       if (!response.ok) {
-        // FIX: Use a specific type for the error data
         const errData: ApiError = await response.json();
         throw new Error(errData.detail || `Server error: ${response.statusText}`);
       }
       const data: TopPostAnalysis = await response.json();
       setDetailedAnalysis(data);
-    // FIX: Catch error as 'unknown' and then check its type
     } catch (err) {
       if (err instanceof Error) {
         setError(`Failed to analyze post: ${err.message}`);
@@ -131,16 +135,16 @@ const AnalysisDashboard: FC<{ initialReport: InitialAnalysisResponse }> = ({ ini
   };
   
   // Custom Dot for the highlighted point on the line chart
-  const HighlightedDot = (props: any) => {
+  // --- FIX: Use the specific HighlightedDotProps type instead of 'any' ---
+  const HighlightedDot = (props: HighlightedDotProps) => {
       const { cx, cy, stroke, payload } = props;
-      if (payload.id === parseInt(selectedPostId, 10)) {
+      if (payload && payload.id === parseInt(selectedPostId, 10)) {
           return <circle cx={cx} cy={cy} r={8} fill={"#2dd4bf"} stroke="#fff" strokeWidth={2} />;
       }
       return <circle cx={cx} cy={cy} r={4} fill={stroke} />;
   };
 
   // Custom Tooltip for the line chart
-  // FIX: Use specific props type and remove unused 'label'
   const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
@@ -186,7 +190,6 @@ const AnalysisDashboard: FC<{ initialReport: InitialAnalysisResponse }> = ({ ini
             {detailedAnalysis && (
                 <>
                 <Card title="Selected Post Performance" icon={<BarChart2 className="size-5 text-fuchsia-400" />}>
-                    {/* FIX: Use curly braces to correctly handle quotes in JSX */}
                     <p className="text-sm italic text-zinc-300 p-3 mb-4 rounded-lg bg-[#110b1f]">{`"${detailedAnalysis.post_title}"`}</p>
                     <div className="grid grid-cols-2 gap-4">
                     <div className="bg-[#110b1f] p-4 rounded-lg text-center"><p className="text-2xl font-bold text-emerald-400">{detailedAnalysis.engagement_rate.toFixed(1)}%</p><p className="text-xs text-zinc-400">Engagement Rate</p></div>
@@ -285,7 +288,6 @@ const AnalysisDashboard: FC<{ initialReport: InitialAnalysisResponse }> = ({ ini
                                    const domain = new URL(url).hostname;
                                    return (
                                    <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 w-60 bg-[#1a112f]/80 border border-[#34285a] hover:border-fuchsia-500/50 rounded-xl p-3 shadow-lg transition-all group" title={url}>
-                                       {/* FIX: Use next/image instead of <img> */}
                                        <div className="flex items-center mb-1 gap-2"><Image src={`https://www.google.com/s2/favicons?domain=${domain}`} alt="favicon" width={16} height={16} className="rounded-sm" /><span className="text-sm text-fuchsia-200 font-medium truncate">{domain}</span></div>
                                        <p className="text-xs text-zinc-400 truncate">{url}</p>
                                    </a>
@@ -351,7 +353,6 @@ export default function ReportAnalyzerPage() {
         }
         const data: InitialAnalysisResponse = await response.json();
         setInitialReport(data);
-      // FIX: Catch error as 'unknown' and then check its type
       } catch (err) {
         if (err instanceof Error) {
             setError(err.message);
