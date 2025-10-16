@@ -85,8 +85,8 @@ export default function ProductPage() {
             </div>
           </Link>
 
-          {/* Card 3: Image Analysis */}
-          <Link href="/creator/story-lab">
+          {/* Card 3: Image Analysis -> now opens content creator with image flow */}
+          <Link href="/content_creator">
             <div className="bg-white rounded-2xl border border-gray-200 shadow-md p-4 transition-all transform hover:scale-105 hover:shadow-2xl hover:bg-gray-100 cursor-pointer">
               <div className="relative h-40 rounded-xl overflow-hidden">
                 <Image

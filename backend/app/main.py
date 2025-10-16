@@ -55,3 +55,6 @@ app.include_router(content_moderator_router, prefix="/moderator")
 from app.agents.video_creator import router as video_creator_router
 app.include_router(video_creator_router, prefix="/video")
 
+from app.agents.engagement import router as engagement_router
+app.include_router(engagement_router, prefix="/engagement")
+

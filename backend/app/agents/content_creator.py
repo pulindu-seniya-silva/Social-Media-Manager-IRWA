@@ -60,6 +60,16 @@ TONE_GUIDELINES = {
     "urgent": "Create a sense of urgency or importance to drive immediate action."
 }
 
+class ImageContentRequest(BaseModel):
+    # Either provide image_url or image_base64 (data without prefix); backend will prepare data URI
+    image_url: str | None = None
+    image_base64: str | None = None
+    platform: str = "general"
+    tone: str = "professional"
+    word_limit: int | None = None
+    # Optional hint topic to steer generation
+    topic: str | None = None
+
 @router.post("/generate-content")
 async def generate_content(req: ContentRequest):
     try:
@@ -212,6 +222,57 @@ async def generate_image(req: ImageRequest):
             return {"image_url": image_url}
         except Exception as e2:
             return {"error": f"Error generating image: {str(e2)}"}
+
+@router.post("/generate-content-from-image")
+async def generate_content_from_image(req: ImageContentRequest):
+    try:
+        platform_guide = PLATFORM_GUIDELINES.get(req.platform, PLATFORM_GUIDELINES["general"])
+        tone_guide = TONE_GUIDELINES.get(req.tone, TONE_GUIDELINES["professional"])
+
+        word_part = f"Limit the caption to about {req.word_limit} words." if req.word_limit else "Keep it concise."
+
+        system_prompt = (
+            "You are an expert social media content creator. Analyze the given image and write a highly "
+            "engaging caption tailored to the specified platform and tone. Include 2-4 relevant hashtags "
+            "when appropriate."
+        )
+
+        text_context = (
+            f"Platform guidance: {platform_guide}\nTone: {tone_guide}\n{word_part}"
+        )
+        if req.topic:
+            text_context += f"\nOptional topic hint: {req.topic}"
+
+        # Build image content
+        image_part: dict
+        if req.image_url:
+            image_part = {"type": "image_url", "image_url": {"url": req.image_url}}
+        elif req.image_base64:
+            # Assume PNG if not specified; clients can still send a data URL via image_url if needed
+            data_uri = f"data:image/png;base64,{req.image_base64}"
+            image_part = {"type": "image_url", "image_url": {"url": data_uri}}
+        else:
+            return {"error": "Provide image_url or image_base64"}
+
+        resp = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": text_context},
+                        image_part,
+                    ],
+                },
+            ],
+            temperature=0.7,
+            max_tokens=220,
+        )
+        generated = resp.choices[0].message.content.strip()
+        return {"content": generated}
+    except Exception as e:
+        return {"error": str(e), "content": ""}
 
 #app.include_router(router, prefix="/content")
 
