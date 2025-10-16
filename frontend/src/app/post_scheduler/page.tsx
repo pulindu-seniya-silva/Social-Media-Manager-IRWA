@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation"; // Import useRouter
+import { useSearchParams, useRouter } from "next/navigation";
 
 // --- Types ---
 type Platform = "Instagram" | "Facebook" | "X (Twitter)" | "TikTok" | "LinkedIn" | "YouTube";
@@ -17,13 +17,27 @@ interface SuggestResponse {
   reason?: StructuredReason | null;
   found_posts?: FoundPostSummary[] | null;
 }
-// Add this new type for our session storage item
 type ScheduledItem = { id: string; platform: Platform; content: string; scheduledAt: string; timezone: string; };
+
+// --- FIX: Add specific request types ---
+interface SuggestRequest {
+  platform: string;
+  content_type: string;
+  content: string;
+  timezone: string;
+  strategy: string;
+}
+interface ScheduleRequest {
+  content: string;
+  platform: string;
+  schedule_at_iso: string;
+}
 
 // --- API Helpers ---
 const BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
-async function suggestBestTime(payload: any): Promise<SuggestResponse> {
+// --- FIX: Use specific type instead of 'any' ---
+async function suggestBestTime(payload: SuggestRequest): Promise<SuggestResponse> {
   const res = await fetch(`${BASE}/post-scheduler/suggest`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), cache: "no-store",
   });
@@ -31,7 +45,8 @@ async function suggestBestTime(payload: any): Promise<SuggestResponse> {
   return await res.json();
 }
 
-async function schedulePost(payload: { content: string; platform: string; schedule_at_iso: string }): Promise<any> {
+// --- FIX: Use specific type instead of 'any' ---
+async function schedulePost(payload: ScheduleRequest): Promise<any> {
   const res = await fetch(`${BASE}/post-scheduler/schedule`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
   });
@@ -69,9 +84,12 @@ const TZ_OPTIONS = [ { id: "Asia/Colombo", label: "Asia/Colombo (UTC+5:30)" }, {
 const PLATFORMS: Platform[] = [ "Instagram", "Facebook", "X (Twitter)", "TikTok", "LinkedIn", "YouTube" ];
 const CONTENT_TYPES = [ "text", "photo", "video", "reel", "short", "link", "carousel", "story", "any" ];
 
+// --- FIX: Moved constant outside the component to fix dependency warning ---
+const LOADING_MESSAGES = [ "Analyzing content...", "Searching for similar posts...", "Checking local trends...", "Expanding search...", "Finalizing with AI analysis...", ];
+
 function SchedulerBody() {
   const searchParams = useSearchParams();
-  const router = useRouter(); // Initialize router
+  const router = useRouter();
   const [platform, setPlatform] = useState<Platform>("LinkedIn");
   const [contentType, setContentType] = useState<string>("text");
   const [timezone, setTimezone] = useState<string>("Asia/Colombo");
@@ -89,8 +107,6 @@ function SchedulerBody() {
   const [foundPosts, setFoundPosts] = useState<FoundPostSummary[] | null>(null);
   const [moderationSignals, setModerationSignals] = useState<Record<string, number> | null>(null);
 
-  const LOADING_MESSAGES = [ "Analyzing content...", "Searching for similar posts...", "Checking local trends...", "Expanding search...", "Finalizing with AI analysis...", ];
-
   useEffect(() => {
     if (loading) {
       setMessage(LOADING_MESSAGES[0]);
@@ -98,7 +114,7 @@ function SchedulerBody() {
       const interval = setInterval(() => { setMessage(LOADING_MESSAGES[i % LOADING_MESSAGES.length]); i++; }, 4000);
       return () => clearInterval(interval);
     }
-  }, [loading, LOADING_MESSAGES]);
+  }, [loading]); // The dependency array is now stable
 
   useEffect(() => {
     const caption = searchParams.get("caption");
@@ -148,26 +164,13 @@ function SchedulerBody() {
         schedule_at_iso: bestISO,
       });
 
-      // Save to session storage and navigate
-      const newItem: ScheduledItem = {
-        id: `${Date.now()}`,
-        platform: platform,
-        content: fullContent,
-        scheduledAt: bestISO,
-        timezone: timezone,
-      };
-      
+      const newItem: ScheduledItem = { id: `${Date.now()}`, platform, content: fullContent, scheduledAt: bestISO, timezone };
       const existingPostsRaw = sessionStorage.getItem('mockScheduledPosts');
       const existingPosts = existingPostsRaw ? JSON.parse(existingPostsRaw) : [];
       const updatedPosts = [...existingPosts, newItem].sort((a,b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
-      
       sessionStorage.setItem('mockScheduledPosts', JSON.stringify(updatedPosts));
-      
       setMessage(result.message || "Scheduled successfully!");
-
-      // Navigate to the new page
       router.push('/schedule_view');
-
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Failed to schedule.");
     } finally {
@@ -246,7 +249,7 @@ function SchedulerBody() {
           <div className="space-y-6">
             <div className="bg-slate-800/60 rounded-2xl p-6 shadow-soft border border-white/5">
               <h2 className="text-xl font-semibold mb-3">Weekly Engagement Heatmap</h2>
-              {heatmap ? (<><Heatmap heatmap={heatmap} highlight={highlight} />{dataSourceExplanation && <div className="mt-4 pt-4 border-t border-white/10"><p className="text-sm text-slate-400"><strong>How was this generated?</strong><br />{dataSourceExplanation}</p></div>}</>) : <div className="text-slate-400 text-sm">No data yet. Click Suggest to load.</div>}
+              {heatmap ? (<><Heatmap heatmap={heatmap} highlight={highlight} />{dataSourceExplanation && <div className="mt-4 pt-4 border-t border-white/10"><p className="text-sm text-slate-400"><strong>How was this generated?</strong><br/>{dataSourceExplanation}</p></div>}</>) : <div className="text-slate-400 text-sm">No data yet. Click Suggest to load.</div>}
             </div>
             {foundPosts && foundPosts.length > 0 && (
               <div className="bg-slate-800/60 rounded-2xl p-6 shadow-soft border border-white/5">
@@ -254,7 +257,7 @@ function SchedulerBody() {
                 <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
                   {foundPosts.map((post, index) => (
                     <div key={index} className="border-b border-white/10 pb-4 last:border-b-0 last:pb-0">
-                      <p className="text-slate-200 text-sm">"{post.snippet}"</p>
+                      <p className="text-slate-200 text-sm">{'"'}{post.snippet}{'"'}</p>
                       <div className="text-xs text-slate-400 mt-2">Posted ~{post.time_ago}</div>
                       <div className="mt-2 flex items-center gap-3 bg-slate-900/50 rounded-lg p-2">
                         <div className="font-bold text-emerald-400 text-lg">{post.predicted_engagement_score}<span className="text-xs font-normal">/100</span></div>
