@@ -14,6 +14,10 @@ LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 
 router = APIRouter()
 
+# ---- Scheduler integration imports ----
+from app.models.post_scheduler import SuggestRequest, SuggestResponse
+from app.agents.post_scheduler import PostSchedulerAgent
+
 # --- minimal fallback mask (only used if LLM fails) ---
 _BANNED = ["hate", "kill", "racist", "sexist", "terror", "suicide"]
 def _mask_banned(text: str) -> str:
@@ -36,6 +40,9 @@ class ReviewResponse(BaseModel):
     cleaned_caption: Optional[str] = None
     signals: Dict[str, float]
     explanations: List[str]
+    # Scheduling suggestion (when available)
+    scheduled_at_iso: Optional[str] = None
+    scheduled_at_pretty: Optional[str] = None
 
 @router.get("/")
 def read_root():
@@ -270,6 +277,26 @@ async def review_and_forward(req: ReviewRequest):
     decision = _moderate_with_llm(req.caption, req.hashtags, req.platform, req.policy or "standard_safe")
     if decision.status == "approved":
         decision.explanations = list(decision.explanations) + ["✅ Auto-forwarded to Scheduler service."]
+        try:
+            agent = PostSchedulerAgent()
+            cleaned = decision.cleaned_caption or req.caption
+            suggest_req = SuggestRequest(
+                platform=req.platform,
+                content_type="post",
+                content=cleaned,
+                timezone=os.getenv("DEFAULT_TZ", "Asia/Colombo"),
+                strategy="core",
+            )
+            suggestion: SuggestResponse = agent.suggest_best_time(suggest_req)
+            decision.scheduled_at_iso = suggestion.best_iso_utc
+            decision.scheduled_at_pretty = suggestion.best_local_pretty
+            decision.explanations = list(decision.explanations) + [
+                f"🗓 Suggested best time: {suggestion.best_local_pretty}"
+            ]
+        except Exception as e:
+            decision.explanations = list(decision.explanations) + [
+                f"⚠️ Scheduler suggestion unavailable: {type(e).__name__}"
+            ]
     return decision
 
 @router.post("/review-and-forward", response_model=ReviewResponse)

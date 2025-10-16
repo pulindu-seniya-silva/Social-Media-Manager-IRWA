@@ -1,532 +1,401 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useState, FC, PropsWithChildren } from "react";
+import Image from "next/image";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-  LineChart,
-  Line,
+  LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer
 } from "recharts";
 import {
-  Sparkles,
-  TrendingUp,
-  MessageSquareText,
-  BarChart3,
-  History,
-  Upload,
-  Trash2,
+  Sparkles, Lightbulb, Search, Bot, UploadCloud, FileCheck2, TrendingUp, FileText, BarChart2, ChevronDown, Rocket, Megaphone, Target,
 } from "lucide-react";
-import Sentiment from "sentiment";
-import { Icon } from "next/dist/lib/metadata/types/metadata-types";
+import { motion, AnimatePresence } from "framer-motion";
 
-// -------------------------
-// helpers (pure front-end demo)
-// -------------------------
-const sentiment = new Sentiment();
-
-type PostInput = {
-  post_id: string;
-  platform: "instagram" | "twitter" | "x" | "linkedin" | "facebook";
-  content?: string;
-  tags?: string[];
+// --- Types ---
+type PostDetails = {
+  id: number;
+  post_title: string;
+  created_date: string | null;
   likes: number;
-  comments: string[];
+  comments: number;
   shares: number;
-  reach: number;
-  follower_change: number;
-  engagementRate?: number;
-  breakdown?: { positive: number; neutral: number; negative: number };
-  keywords?: string[];
+  engagement_rate: number;
 };
 
-const STOPWORDS = new Set(
-  "a an the and or but if while is are was were be been being i you he she it we they them this that these those to from for of on in at by with about as into like through after over between out against during without before under around among very really just not no your our their me my mine ours theirs too very so such can could should would will won don t s".split(
-    /\s+/g
-  )
+type RecommendationDetail = {
+    title: string;
+    description: string;
+}
+
+type StrategicRecommendation = {
+    theme: string;
+    reason: string;
+    recommendations: RecommendationDetail[];
+}
+
+type TopPostAnalysis = {
+  post_title: string;
+  engagement_rate: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  external_context_summary: string;
+  relevant_urls: string[];
+  strategic_recommendations: StrategicRecommendation;
+  upcoming_trends: string[];
+};
+
+type InitialAnalysisResponse = {
+  total_posts_analyzed: number;
+  average_engagement_rate: number;
+  posts: PostDetails[];
+};
+
+type ApiError = {
+  detail?: string;
+};
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: PostDetails }>;
+}
+
+// --- FIX: Add a specific type for the HighlightedDot component props ---
+interface HighlightedDotProps {
+  cx?: number;
+  cy?: number;
+  stroke?: string;
+  payload?: PostDetails;
+}
+
+// --- Reusable UI Components ---
+const Card: FC<PropsWithChildren<{ title: string; icon: React.ReactNode; className?: string; }>> = ({ title, icon, children, className = "" }) => (
+    <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.5, ease: "easeInOut" }}
+    className={`bg-[#1a132b]/80 border border-[#2a2044] rounded-2xl p-6 shadow-lg ${className}`}
+  >
+    <div className="flex items-center gap-3 mb-4">
+      <div className="bg-gradient-to-br from-fuchsia-600/20 to-violet-600/20 p-2 rounded-lg border border-fuchsia-500/30">{icon}</div>
+      <h3 className="font-semibold text-lg text-zinc-100">{title}</h3>
+    </div>
+    {children}
+  </motion.div>
 );
 
-function tokenize(text: string) {
-  const cleaned = text
-    .toLowerCase()
-    .replace(/[^a-z0-9#\s]/g, " ")
-    .split(/\s+/)
-    .filter((t) => t && !STOPWORDS.has(t));
-  return cleaned;
-}
+// --- Feature Components ---
+const ReportUploader: FC<{file: File | null;isLoading: boolean;onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;onAnalyze: () => void;}> = ({ file, isLoading, onFileChange, onAnalyze }) => ( <div className="rounded-2xl bg-[#1a132b]/80 border border-[#2a2044] p-6 shadow-sm flex flex-col md:flex-row items-center gap-6"> <div className="w-full flex-grow"> <label htmlFor="file-upload" className="flex flex-col items-center justify-center w-full h-32 px-4 transition-all duration-300 bg-[#110b1f] border-2 border-dashed rounded-xl border-[#2a2044] cursor-pointer hover:border-fuchsia-400 hover:bg-[#1a132b]/50"> {file ? ( <div className="text-center text-emerald-400"> <FileCheck2 className="size-8 mx-auto mb-2" /> <p className="font-semibold">{file.name}</p> <p className="text-xs text-zinc-400">Ready to analyze</p> </div> ) : ( <div className="text-center text-zinc-400"> <UploadCloud className="size-8 mx-auto mb-2" /> <p className="font-semibold">Click to upload or drag and drop</p> <p className="text-xs">CSV or XLSX file</p> </div> )} <input id="file-upload" type="file" className="hidden" accept=".csv, .xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" onChange={onFileChange} /> </label> </div> <button onClick={onAnalyze} disabled={!file || isLoading} className="w-full md:w-auto px-8 py-4 rounded-xl bg-gradient-to-r from-fuchsia-600 to-violet-600 text-white font-semibold shadow-lg hover:shadow-fuchsia-500/40 transition-all duration-300 transform hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-y-0 flex items-center justify-center gap-2"> <Bot className="size-5" /> {isLoading ? "Agent is Processing..." : "Process Report"} </button> </div> );
+const LoadingState: FC<{ text?: string }> = ({ text = "Processing the file, mapping columns, and extracting posts..." }) => ( <div className="text-center p-10 rounded-2xl bg-[#1a132b]/80 border border-dashed border-[#2a2044]"> <Bot className="size-16 text-fuchsia-500/50 mb-4 animate-pulse mx-auto" /> <h3 className="font-semibold text-lg">Agent at Work...</h3> <p className="text-zinc-400 text-sm max-w-md mx-auto">{text}</p> </div> );
 
-function extractKeywords(comments: string[], k = 5) {
-  const tokens = comments.flatMap((c) => tokenize(c));
-  const counts = new Map<string, number>();
-  for (const t of tokens) counts.set(t, (counts.get(t) || 0) + 1);
-  const hashtags = Array.from(counts.entries())
-    .filter(([w]) => w.startsWith("#"))
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([w]) => w);
-  const rest = Array.from(counts.entries())
-    .filter(([w]) => !w.startsWith("#"))
-    .sort((a, b) => b[1] - a[1])
-    .map(([w]) => w);
-  const merged: string[] = [];
-  for (const h of hashtags) merged.push(h);
-  for (const r of rest) if (!merged.includes(r)) merged.push(r);
-  return merged.slice(0, k);
-}
 
-function classifySentiment(text: string) {
-  const s = sentiment.analyze(text).comparative;
-  if (s > 0.05) return "positive" as const;
-  if (s < -0.05) return "negative" as const;
-  return "neutral" as const;
-}
+// --- Analysis Dashboard Component ---
+const AnalysisDashboard: FC<{ initialReport: InitialAnalysisResponse }> = ({ initialReport }) => {
+  const [selectedPostId, setSelectedPostId] = useState<string>("");
+  const [detailedAnalysis, setDetailedAnalysis] = useState<TopPostAnalysis | null>(null);
+  const [isPostLoading, setIsPostLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-function analyzePost(p: PostInput) {
-  const comments = p.comments || [];
-  const breakdown = { positive: 0, neutral: 0, negative: 0 };
-  comments.forEach((c) => {
-    const label = classifySentiment(c);
-    breakdown[label]++;
-  });
-  const engagementRate = ((p.likes + p.shares + comments.length) / Math.max(1, p.reach)) * 100;
-  const keywords = extractKeywords(comments, 5);
-  return {
-    ...p,
-    engagementRate: Number(engagementRate.toFixed(2)),
-    breakdown,
-    keywords,
-  };
-}
-
-// Sample dataset
-const SAMPLE: PostInput[] = [
-  {
-    post_id: "123",
-    platform: "instagram",
-    content: "Healthy smoothie recipe!",
-    tags: ["#health", "#smoothie"],
-    likes: 120,
-    comments: ["Love this!", "Too much sugar", "Looks tasty 😍"],
-    shares: 10,
-    reach: 1000,
-    follower_change: 20,
-  },
-  {
-    post_id: "124",
-    platform: "instagram",
-    content: "Meal prep tips for busy students",
-    tags: ["#mealprep", "#students"],
-    likes: 90,
-    comments: ["Very helpful", "Okay post", "Not relevant"],
-    shares: 7,
-    reach: 900,
-    follower_change: 5,
-  },
-  {
-    post_id: "L-201",
-    platform: "linkedin",
-    content: "5 habits for a healthier workday",
-    tags: ["#wellbeing", "#productivity"],
-    likes: 60,
-    comments: ["Great advice", "Will share with my team"],
-    shares: 12,
-    reach: 800,
-    follower_change: 8,
-  },
-];
-
-// -------------------------
-// UI Components
-// -------------------------
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  sub,
-}: {
-  title: string;
-  value: string | number;
-  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-  sub?: string;
-}) {
-  return (
-    <div className="p-5 rounded-2xl bg-[#1a132b]/80 shadow-sm border border-[#2a2044] text-zinc-100 flex items-center gap-4">
-      <div className="p-3 rounded-xl bg-gradient-to-br from-fuchsia-500/15 to-violet-500/15 text-fuchsia-300">
-        <Icon className="size-6" />
-      </div>
-      <div>
-        <div className="text-sm text-zinc-400">{title}</div>
-        <div className="text-2xl font-semibold">{value}</div>
-        {sub && <div className="text-xs text-zinc-500 mt-1">{sub}</div>}
-      </div>
-    </div>
-  );
-}
-
-function Chip({ label }: { label: string }) {
-  return (
-    <span className="px-3 py-1 rounded-full bg-[#231a3b] text-zinc-100 text-xs border border-[#34285a]">
-      {label}
-    </span>
-  );
-}
-
-// -------------------------
-// Page Component
-// -------------------------
-export default function EngagementAnalyzerPage() {
-  const [form, setForm] = useState<PostInput>({
-    post_id: "IG_2025_0001",
-    platform: "instagram",
-    content: "Sustainability tips for students",
-    tags: ["#sustainability", "#studentlife"],
-    likes: 120,
-    shares: 18,
-    reach: 1000,
-    follower_change: 12,
-    comments: [
-      "Love this idea! So useful.",
-      "Not sure this helps me.",
-      "Great tips – saved!",
-      "This is okay.",
-      "Amazing post #sustainability",
-    ],
-  });
-  const [history, setHistory] = useState<PostInput[]>([]);
-  const [jsonInput, setJsonInput] = useState<string>("");
-  const [useJson, setUseJson] = useState(false);
-
-  const analysis = useMemo(() => analyzePost(form), [form]);
-
-  const seriesData = useMemo(() => [
-    { name: "likes", value: form.likes },
-    { name: "comments", value: form.comments.length },
-    { name: "shares", value: form.shares },
-  ], [form]);
-
-  const pieData = useMemo(() => {
-    const b = analysis.breakdown!;
-    return [
-      { name: "Positive", value: b.positive },
-      { name: "Neutral", value: b.neutral },
-      { name: "Negative", value: b.negative },
-    ];
-  }, [analysis]);
-
-  const addToHistory = () => setHistory((h) => [analysis, ...h].slice(0, 20));
-  const loadSample = (i: number) => setForm(SAMPLE[i]);
-  const applyJson = () => {
+  const handlePostSelection = async (postId: string) => {
+    if (!postId) {
+      setSelectedPostId("");
+      setDetailedAnalysis(null);
+      return;
+    }
+    setSelectedPostId(postId);
+    setDetailedAnalysis(null);
+    setIsPostLoading(true);
+    setError(null);
+    const selectedPost = initialReport.posts.find(p => p.id === parseInt(postId, 10));
+    if (!selectedPost) {
+      setError("Could not find the selected post.");
+      setIsPostLoading(false);
+      return;
+    }
     try {
-      const obj = JSON.parse(jsonInput);
-      setForm({
-        post_id: obj.post_id ?? "sample",
-        platform: (obj.platform || "instagram").toLowerCase() as PostInput["platform"],
-        content: obj.content ?? "",
-        tags: obj.tags ?? [],
-        likes: Number(obj.likes ?? 0),
-        comments: Array.isArray(obj.comments) ? obj.comments : [],
-        shares: Number(obj.shares ?? 0),
-        reach: Number(obj.reach ?? 1),
-        follower_change: Number(obj.follower_change ?? 0),
+      const response = await fetch("http://127.0.0.1:8000/api/engagement/analyze-post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(selectedPost),
       });
-    } catch (_e) {
-      alert("Invalid JSON. Please check your input.");
+      if (!response.ok) {
+        const errData: ApiError = await response.json();
+        throw new Error(errData.detail || `Server error: ${response.statusText}`);
+      }
+      const data: TopPostAnalysis = await response.json();
+      setDetailedAnalysis(data);
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(`Failed to analyze post: ${err.message}`);
+      } else {
+        setError("An unknown error occurred while analyzing the post.");
+      }
+    } finally {
+      setIsPostLoading(false);
     }
   };
+  
+  // Custom Dot for the highlighted point on the line chart
+  // --- FIX: Use the specific HighlightedDotProps type instead of 'any' ---
+  const HighlightedDot = (props: HighlightedDotProps) => {
+      const { cx, cy, stroke, payload } = props;
+      if (payload && payload.id === parseInt(selectedPostId, 10)) {
+          return <circle cx={cx} cy={cy} r={8} fill={"#2dd4bf"} stroke="#fff" strokeWidth={2} />;
+      }
+      return <circle cx={cx} cy={cy} r={4} fill={stroke} />;
+  };
+
+  // Custom Tooltip for the line chart
+  const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-[#110b1f] border border-[#2a2044] rounded-lg p-3 text-sm shadow-lg">
+          <p className="font-bold text-fuchsia-300">{`${data.engagement_rate.toFixed(2)}%`}</p>
+          <p className="text-zinc-400 max-w-[200px] truncate">{data.post_title}</p>
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#3f0a6b] via-[#0f0a1a] to-black text-zinc-100">
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Header */}
-        <header className="mb-8 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-semibold tracking-tight flex items-center gap-3">
-              <Sparkles className="size-7 text-fuchsia-400" /> Engagement Analyzer
-            </h1>
-            <p className="text-zinc-400 mt-1">
-              Paste metrics or use a sample, then instantly see sentiment, keywords and engagement quality.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => loadSample(0)}
-              className="px-3 py-2 rounded-xl bg-[#1a132b]/80 border border-[#2a2044] hover:shadow-sm"
-              title="Load sample"
-            >
-              <Upload className="size-4 inline mr-2" /> Sample
-            </button>
-            <button
-              onClick={() => setHistory([])}
-              className="px-3 py-2 rounded-xl bg-[#1a132b]/80 border border-[#2a2044] hover:shadow-sm"
-              title="Clear history"
-            >
-              <Trash2 className="size-4 inline mr-2" /> Clear
-            </button>
-          </div>
-        </header>
-
-        {/* Content grid */}
-        <div className="grid lg:grid-cols-2 gap-6 items-start">
-          {/* Left: Input card */}
-          <div className="rounded-2xl bg-[#1a132b]/80 border border-[#2a2044] p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold flex items-center gap-2">
-                <MessageSquareText className="size-5 text-fuchsia-400" />
-                Input
-              </h2>
-              <label className="text-sm text-zinc-400 flex items-center gap-2 select-none">
-                <input
-                  type="checkbox"
-                  checked={useJson}
-                  onChange={(e) => setUseJson(e.target.checked)}
-                />
-                Paste JSON
-              </label>
-            </div>
-
-            {!useJson ? (
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <div className="col-span-2">
-                  <label className="text-xs text-zinc-400">Post ID</label>
-                  <input
-                    className="w-full mt-1 px-3 py-2 rounded-xl bg-[#110b1f] border border-[#2a2044] placeholder-zinc-500"
-                    value={form.post_id}
-                    onChange={(e) => setForm({ ...form, post_id: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-zinc-400">Platform</label>
-                  <select
-                    className="w-full mt-1 px-3 py-2 rounded-xl bg-[#110b1f] border border-[#2a2044]"
-                    value={form.platform}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                      setForm({ ...form, platform: e.target.value as PostInput["platform"] })
-                    }
-
-                  >
-                    <option value="instagram">Instagram</option>
-                    <option value="twitter">Twitter/X</option>
-                    <option value="linkedin">LinkedIn</option>
-                    <option value="facebook">Facebook</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-zinc-400">Reach</label>
-                  <input
-                    type="number"
-                    className="w-full mt-1 px-3 py-2 rounded-xl bg-[#110b1f] border border-[#2a2044]"
-                    value={form.reach}
-                    onChange={(e) => setForm({ ...form, reach: Number(e.target.value) })}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-zinc-400">Likes</label>
-                  <input
-                    type="number"
-                    className="w-full mt-1 px-3 py-2 rounded-xl bg-[#110b1f] border border-[#2a2044]"
-                    value={form.likes}
-                    onChange={(e) => setForm({ ...form, likes: Number(e.target.value) })}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-zinc-400">Shares</label>
-                  <input
-                    type="number"
-                    className="w-full mt-1 px-3 py-2 rounded-xl bg-[#110b1f] border border-[#2a2044]"
-                    value={form.shares}
-                    onChange={(e) => setForm({ ...form, shares: Number(e.target.value) })}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-zinc-400">Follower change</label>
-                  <input
-                    type="number"
-                    className="w-full mt-1 px-3 py-2 rounded-xl bg-[#110b1f] border border-[#2a2044]"
-                    value={form.follower_change}
-                    onChange={(e) => setForm({ ...form, follower_change: Number(e.target.value) })}
-                  />
-                </div>
-                <div className="col-span-2">
-                  <label className="text-xs text-zinc-400">Comments (one per line)</label>
-                  <textarea
-                    rows={5}
-                    className="w-full mt-1 px-3 py-2 rounded-xl bg-[#110b1f] border border-[#2a2044]"
-                    value={form.comments.join("\n")}
-                    onChange={(e) =>
-                      setForm({ ...form, comments: e.target.value.split("\n").filter(Boolean) })
-                    }
-                  />
-                </div>
-
-                <div className="col-span-2 flex gap-2 mt-2">
-                  <button
-                    onClick={() => loadSample(0)}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-violet-600 text-white hover:from-fuchsia-700 hover:to-violet-700"
-                  >
-                    Load Sample A
-                  </button>
-                  <button
-                    onClick={() => loadSample(1)}
-                    className="px-4 py-2 rounded-xl bg-[#0f0f14] text-white border border-[#2a2044] hover:bg-black"
-                  >
-                    Load Sample B
-                  </button>
-                  <button
-                    onClick={() => loadSample(2)}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-700 text-white hover:from-violet-700 hover:to-purple-800"
-                  >
-                    Load Sample C
-                  </button>
-                  <button
-                    onClick={addToHistory}
-                    className="ml-auto px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
-                  >
-                    Save to History
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-4">
-                <p className="text-xs text-zinc-400 mb-2">
-                  Paste JSON with keys: post_id, platform, likes, shares, reach, follower_change, comments[]
-                </p>
-                <textarea
-                  rows={10}
-                  value={jsonInput}
-                  onChange={(e) => setJsonInput(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#110b1f] border border-[#2a2044]"
-                  placeholder="{&quot;post_id&quot;:&quot;123&quot;,&quot;platform&quot;:&quot;instagram&quot;,&quot;likes&quot;:120,&quot;shares&quot;:10,&quot;reach&quot;:1000,&quot;follower_change&quot;:20,&quot;comments&quot;:[&quot;Love this!&quot;,&quot;Too much sugar&quot;,&quot;Looks tasty 😍&quot;]}"
-
-                />
-                <div className="flex gap-2 mt-3">
-                  <button
-                    onClick={applyJson}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-violet-600 text-white hover:from-fuchsia-700 hover:to-violet-700"
-                  >
-                    Apply JSON
-                  </button>
-                  <button
-                    onClick={() => setJsonInput("")}
-                    className="px-4 py-2 rounded-xl bg-[#1a132b]/80 border border-[#2a2044]"
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Right: Analysis */}
-          <div className="space-y-6">
-            <div className="grid sm:grid-cols-3 gap-4">
-              <StatCard
-                title="Engagement rate"
-                value={`${analysis.engagementRate}%`}
-                icon={TrendingUp}
-                sub="(likes + shares + comments) / reach"
-              />
-              <StatCard title="Comments" value={form.comments.length} icon={MessageSquareText} sub={form.platform} />
-              <StatCard title="Follower Δ" value={form.follower_change} icon={BarChart3} sub="since post" />
-            </div>
-
-            <div className="rounded-2xl bg-[#1a132b]/80 border border-[#2a2044] p-5 shadow-sm">
-              <h3 className="font-semibold mb-3 text-zinc-100">Keyword Highlights</h3>
-              <div className="flex flex-wrap gap-2">
-                {analysis.keywords.length ? (
-                  analysis.keywords.map((k: string) => <Chip key={k} label={k} />)
-                ) : (
-                  <span className="text-sm text-zinc-400">No keywords extracted</span>
-                )}
-              </div>
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="rounded-2xl bg-[#1a132b]/80 border border-[#2a2044] p-5 shadow-sm">
-                <h3 className="font-semibold mb-3 text-zinc-100">Post Metrics</h3>
-                <div className="h-60">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={seriesData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" stroke="#a3a3a3" />
-                      <YAxis stroke="#a3a3a3" />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="value" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="rounded-2xl bg-[#1a132b]/80 border border-[#2a2044] p-5 shadow-sm">
-                <h3 className="font-semibold mb-3 text-zinc-100">Sentiment Breakdown</h3>
-                <div className="h-60">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Tooltip />
-                      <Legend />
-                      <Pie dataKey="value" data={pieData} label />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl bg-[#1a132b]/80 border border-[#2a2044] p-5 shadow-sm">
-              <h3 className="font-semibold mb-3 text-zinc-100">Engagement Quality Over Time (local history)</h3>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={history.map((h) => ({
-                      name: h.post_id,
-                      rate: h.engagementRate,
-                      pos: h.breakdown?.positive ?? 0,
-                      neg: h.breakdown?.negative ?? 0,
-                    }))}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" stroke="#a3a3a3" />
-                    <YAxis stroke="#a3a3a3" />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="rate" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-              {history.length === 0 && (
-                <p className="text-sm text-zinc-400 mt-3">Use &quot;Save to History&quot; to build a comparison chart.</p>
-              )}
-            </div>
-
-            <div className="rounded-2xl bg-[#1a132b]/80 border border-[#2a2044] p-5 shadow-sm">
-              <h3 className="font-semibold mb-3 flex items-center gap-2 text-zinc-100">
-                <History className="size-5 text-fuchsia-400" /> Recent Comments
-              </h3>
-              <div className="grid gap-2">
-                {form.comments.map((c, i) => (
-                  <div key={i} className="px-3 py-2 rounded-xl bg-[#110b1f] border border-[#2a2044]">
-                    {c}
-                  </div>
-                ))}
-                {form.comments.length === 0 && (
-                  <div className="text-sm text-zinc-400">No comments supplied.</div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer note */}
-        <p className="text-xs text-zinc-500 mt-8 text-center">
-          {"Front-end demo only (local analysis). Later, wire this to your FastAPI backend endpoints."}
-        </p>
+    <div className="space-y-6">
+      <div className="relative">
+        <select
+          value={selectedPostId}
+          onChange={(e) => handlePostSelection(e.target.value)}
+          className="w-full appearance-none bg-[#110b1f] border border-[#2a2044] rounded-lg p-3 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 transition-all"
+          disabled={!initialReport.posts.length}
+        >
+          <option value="">-- Select a Post to Analyze --</option>
+          {initialReport.posts.map(post => (<option key={post.id} value={post.id}>{post.post_title.substring(0, 100)}{post.post_title.length > 100 ? "..." : ""}</option>))}
+        </select>
+        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-5 text-zinc-400 pointer-events-none" />
       </div>
+      {error && <p className="text-sm text-red-400 text-center">{error}</p>}
+      <motion.div
+        className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+        initial="hidden" animate="visible"
+        variants={{ hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.1 } } }}
+      >
+        <div className="lg:col-span-1 flex flex-col gap-6">
+          <Card title="Overall Summary" icon={<FileText className="size-5 text-fuchsia-400" />}>
+            <div className="flex justify-around text-center">
+              <div><p className="text-2xl font-bold text-fuchsia-300">{initialReport.total_posts_analyzed}</p><p className="text-xs text-zinc-400">Posts in Report</p></div>
+              <div><p className="text-2xl font-bold text-fuchsia-300">{initialReport.average_engagement_rate.toFixed(2)}%</p><p className="text-xs text-zinc-400">Avg. Engagement</p></div>
+            </div>
+          </Card>
+          
+          <AnimatePresence>
+            {detailedAnalysis && (
+                <>
+                <Card title="Selected Post Performance" icon={<BarChart2 className="size-5 text-fuchsia-400" />}>
+                    <p className="text-sm italic text-zinc-300 p-3 mb-4 rounded-lg bg-[#110b1f]">{`"${detailedAnalysis.post_title}"`}</p>
+                    <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-[#110b1f] p-4 rounded-lg text-center"><p className="text-2xl font-bold text-emerald-400">{detailedAnalysis.engagement_rate.toFixed(1)}%</p><p className="text-xs text-zinc-400">Engagement Rate</p></div>
+                    <div className="bg-[#110b1f] p-4 rounded-lg text-center"><p className="text-2xl font-bold text-fuchsia-300">{detailedAnalysis.likes}</p><p className="text-xs text-zinc-400">Likes</p></div>
+                    <div className="bg-[#110b1f] p-4 rounded-lg text-center"><p className="text-2xl font-bold text-fuchsia-300">{detailedAnalysis.comments}</p><p className="text-xs text-zinc-400">Comments</p></div>
+                    <div className="bg-[#110b1f] p-4 rounded-lg text-center"><p className="text-2xl font-bold text-fuchsia-300">{detailedAnalysis.shares}</p><p className="text-xs text-zinc-400">Shares</p></div>
+                    </div>
+                </Card>
+                <Card title="Upcoming Trend Ideas" icon={<Rocket className="size-5 text-fuchsia-400" />}>
+                    <ul className="space-y-3">
+                        {detailedAnalysis.upcoming_trends?.map((trend, i) => (
+                            <li key={i} className="flex items-start gap-3 text-sm text-zinc-300">
+                                <Lightbulb className="size-4 mt-0.5 flex-shrink-0 text-fuchsia-400" />
+                                <span>{trend}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </Card>
+                </>
+            )}
+          </AnimatePresence>
+        </div>
+        <div className="lg:col-span-2 flex flex-col gap-6">
+          <AnimatePresence mode="wait">
+            {isPostLoading ? (
+              <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <LoadingState text="Analyzing selected post, researching context, and generating strategic insights..." />
+              </motion.div>
+            ) : detailedAnalysis ? (
+              <motion.div key="results" className="space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <Card title="Engagement Rate Context" icon={<TrendingUp className="size-5 text-fuchsia-400" />}>
+                    <div className="h-64 w-full">
+                        <ResponsiveContainer>
+                            <LineChart
+                                data={initialReport.posts}
+                                margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
+                            >
+                                <CartesianGrid strokeDasharray="3 3" stroke="#2a2044" />
+                                <XAxis 
+                                    dataKey="id" 
+                                    tickFormatter={(tick) => `Post ${tick + 1}`} 
+                                    stroke="#a3a3a3"
+                                    fontSize={12}
+                                />
+                                <YAxis 
+                                    stroke="#a3a3a3" 
+                                    fontSize={12}
+                                    tickFormatter={(value) => `${value}%`}
+                                />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Line
+                                    type="monotone"
+                                    dataKey="engagement_rate"
+                                    stroke="#a855f7"
+                                    strokeWidth={2}
+                                    dot={<HighlightedDot />}
+                                    activeDot={{ r: 8 }}
+                                />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                </Card>
+
+                <Card title="AI Strategic Recommendations" icon={<Lightbulb className="size-5 text-fuchsia-400" />}>
+                    <div className="space-y-4">
+                        <div className="text-center p-3 bg-[#110b1f] rounded-lg">
+                            <span className="text-sm font-semibold uppercase tracking-wider text-fuchsia-400">Core Theme</span>
+                            <h4 className="text-xl font-bold text-zinc-100">{detailedAnalysis.strategic_recommendations.theme}</h4>
+                        </div>
+                        <p className="text-center text-sm text-zinc-400 italic">
+                           <span className="font-semibold text-zinc-300">Why it worked:</span> {detailedAnalysis.strategic_recommendations.reason}
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                           {detailedAnalysis.strategic_recommendations.recommendations.map((rec, i) => (
+                               <div key={i} className="bg-[#0c0718]/80 border border-[#2a2044] rounded-lg p-4">
+                                   <div className="flex items-center gap-3 mb-2">
+                                       {i === 0 ? <Megaphone className="size-5 text-emerald-400"/> : <Target className="size-5 text-emerald-400"/>}
+                                       <h5 className="font-semibold text-zinc-200">{rec.title}</h5>
+                                   </div>
+                                   <p className="text-sm text-zinc-400">{rec.description}</p>
+                               </div>
+                           ))}
+                        </div>
+                    </div>
+                </Card>
+
+                <Card title="External Engagement Context" icon={<Search className="size-5 text-fuchsia-400" />}>
+                  <div className="bg-[#0c0718]/80 border border-[#2a2044] rounded-xl p-4 text-sm text-zinc-300 max-h-48 overflow-y-auto scrollbar-thin scrollbar-thumb-[#4b397c] scrollbar-track-transparent">
+                    <ul className="list-disc list-inside space-y-2">{detailedAnalysis.external_context_summary.split(/(?<=\.)\s+/).map((s,i) => <li key={i}>{s.trim()}</li>)}</ul>
+                  </div>
+                  {detailedAnalysis.relevant_urls.length > 0 && (
+                       <div className="mt-4">
+                           <p className="text-xs text-fuchsia-300 mb-3 uppercase tracking-wide font-semibold">🔗 Trending Mentions & Sources</p>
+                           <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-fuchsia-500/50 scrollbar-track-transparent">
+                               {detailedAnalysis.relevant_urls.map((url) => {
+                                   const domain = new URL(url).hostname;
+                                   return (
+                                   <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 w-60 bg-[#1a112f]/80 border border-[#34285a] hover:border-fuchsia-500/50 rounded-xl p-3 shadow-lg transition-all group" title={url}>
+                                       <div className="flex items-center mb-1 gap-2"><Image src={`https://www.google.com/s2/favicons?domain=${domain}`} alt="favicon" width={16} height={16} className="rounded-sm" /><span className="text-sm text-fuchsia-200 font-medium truncate">{domain}</span></div>
+                                       <p className="text-xs text-zinc-400 truncate">{url}</p>
+                                   </a>
+                                   );
+                               })}
+                           </div>
+                       </div>
+                  )}
+                </Card>
+              </motion.div>
+            ) : (
+              <motion.div key="placeholder" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center justify-center text-center p-10 rounded-2xl bg-[#1a132b]/50 border border-dashed border-[#2a2044] h-full">
+                <div>
+                  <TrendingUp className="size-16 text-fuchsia-500/30 mb-4 mx-auto" />
+                  <h3 className="font-semibold text-lg">Select a Post</h3>
+                  <p className="text-zinc-400 text-sm">Choose a post from the dropdown to see its detailed analysis.</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </motion.div>
     </div>
   );
-}
+};
+
+
+// --- Main Page Component ---
+export default function ReportAnalyzerPage() {
+    const [file, setFile] = useState<File | null>(null);
+    const [initialReport, setInitialReport] = useState<InitialAnalysisResponse | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+  
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+      if (event.target.files && event.target.files.length > 0) {
+        setFile(event.target.files[0]);
+        setInitialReport(null);
+        setError(null);
+      }
+    };
+  
+    const handleProcessFile = async () => {
+      if (!file) {
+        setError("Please select a CSV or XLSX file to analyze.");
+        return;
+      }
+      setIsLoading(true);
+      setError(null);
+      setInitialReport(null);
+  
+      const formData = new FormData();
+      formData.append("report_file", file);
+  
+      try {
+        const response = await fetch("http://127.0.0.1:8000/api/engagement/process-file", {
+          method: "POST",
+          body: formData,
+        });
+        if (!response.ok) {
+          const errData: ApiError = await response.json();
+          throw new Error(errData.detail || `Server error: ${response.statusText}`);
+        }
+        const data: InitialAnalysisResponse = await response.json();
+        setInitialReport(data);
+      } catch (err) {
+        if (err instanceof Error) {
+            setError(err.message);
+        } else {
+            setError("An unknown error occurred while processing the file.");
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+  
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#3f0a6b] via-[#0f0a1a] to-black text-zinc-100 font-sans">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <header className="mb-10 text-center">
+            <h1 className="text-4xl md:text-5xl font-bold tracking-tight flex items-center justify-center gap-3 bg-clip-text text-transparent bg-gradient-to-r from-fuchsia-400 to-violet-400">
+              <Sparkles className="size-8" /> Reporting Analyzer Agent
+            </h1>
+            <p className="text-zinc-400 mt-2 max-w-2xl mx-auto">
+              Upload your report to get an automated strategic analysis for any post.
+            </p>
+          </header>
+  
+          <main className="space-y-8">
+            <ReportUploader
+              file={file}
+              isLoading={isLoading}
+              onFileChange={handleFileChange}
+              onAnalyze={handleProcessFile}
+            />
+  
+            {error && (
+              <motion.p initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="text-sm text-red-400 text-center">
+                {error}
+              </motion.p>
+            )}
+  
+            <AnimatePresence>
+              {isLoading && <LoadingState />}
+              {initialReport && <AnalysisDashboard initialReport={initialReport} />}
+            </AnimatePresence>
+          </main>
+        </div>
+      </div>
+    );
+  }
