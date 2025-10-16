@@ -18,3 +18,6 @@ pytz
 dateparser
 beautifulsoup4
 lxml
+pillow
+imageio
+imageio-ffmpeg
