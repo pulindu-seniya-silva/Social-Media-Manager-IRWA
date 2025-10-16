@@ -14,3 +14,7 @@ numpy
 python-dateutil 
 openpyxl
 openai
+pillow
+imageio
+imageio-ffmpeg
+beautifulsoup4

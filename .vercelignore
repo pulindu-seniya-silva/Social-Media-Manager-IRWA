@@ -1,0 +1,22 @@
+# Exclude heavy/local directories from Vercel upload
+backend/
+venv/
+**/venv/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/data/
+**/notebooks/
+**/tests/
+
+# Media
+**/*.mp4
+**/*.avi
+**/*.mkv
+**/*.mov
+
+# Editor/IDE caches
+**/.idea/
+**/.vscode/
+**/.cursor/
+**/.agent-tools/
