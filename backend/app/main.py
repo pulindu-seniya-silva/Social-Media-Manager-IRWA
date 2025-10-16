@@ -10,6 +10,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.middleware import SlowAPIMiddleware
 
+
 # Routers
 from app.routes.post_scheduler_routes import router as post_scheduler_router
 from app.routes.chat_routes import router as chat_router
@@ -18,6 +19,7 @@ from app.agents.content_creator import router as content_creator_router
 from app.agents.content_moderator import router as content_moderator_router
 from app.agents.video_creator import router as video_creator_router
 from app.agents.engagement import router as engagement_router
+
 
 
 app = FastAPI(title="IRWA SocialMediaManager")
@@ -48,12 +50,35 @@ def health():
 
 
 # Mount routers
+# app.include_router(api_router, prefix="/api")
+# MongoDB database routes - added by pulindu
+from app.routes.chat_routes import router as chat_router
 app.include_router(post_scheduler_router)
 app.include_router(chat_router)
 app.include_router(content_creator_router, prefix="/content")
 app.include_router(content_moderator_router, prefix="/moderator")
 app.include_router(video_creator_router, prefix="/video")
 app.include_router(engagement_router, prefix="/engagement")
+
+# engagement analyzer routes - added by layara
+
+# backend/app/routes/main.py
+from .routes.engagement import router as engagement_router
+
+from app.routes import post_scheduler_routes
+app.include_router(post_scheduler_routes.router)
+
+# app = FastAPI(title="Engagement Analyzer Agent")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "*"],  # adjust for your frontend origin
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(engagement_router)
 app.include_router(engagement_api_router)  # provides /api/engagement/analyze
 
 

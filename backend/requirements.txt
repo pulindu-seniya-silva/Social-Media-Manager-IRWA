@@ -14,7 +14,10 @@ numpy
 python-dateutil 
 openpyxl
 openai
+pytz
+dateparser
+beautifulsoup4
+lxml
 pillow
 imageio
 imageio-ffmpeg
-beautifulsoup4

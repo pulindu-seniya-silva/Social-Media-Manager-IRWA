@@ -1,27 +1,55 @@
-# backend/app/models/post_scheduler.py
-from pydantic import BaseModel, Field
-from typing import List, Literal, Optional
+from pydantic import BaseModel
+from typing import List, Optional
 
-Platform = Literal["Instagram","Facebook","X (Twitter)","TikTok","LinkedIn","YouTube"]
+# --- Model for a single scraped post with AI analysis ---
+class FoundPostSummary(BaseModel):
+    snippet: str
+    time_ago: str
+    predicted_engagement_score: int
+    justification: str
 
-class SuggestRequest(BaseModel):
-    platform: Platform
-    # Default "any" to match the backend logic and avoid 422s on GET
-    content_type: str = Field("any", description="e.g., photo, reel, video, text, link")
-    timezone: str = "Asia/Colombo"
-    days_ahead: int = 7
-    strategy: Literal["heuristic", "llm"] = "heuristic"  # "llm" adds an LLM-written reason
-
+# --- Core Models ---
 class Slot(BaseModel):
-    weekday: int                # 0=Mon ... 6=Sun (python style)
-    hour_24: int                # 0..23
+    weekday: int
+    hour_24: int
     score: float
 
+class ReasonPoint(BaseModel):
+    icon: str
+    title: str
+    text: str
+
+class StructuredReason(BaseModel):
+    headline: str
+    points: List[ReasonPoint]
+
+# --- API Request and Response Models for Suggestion ---
+class SuggestRequest(BaseModel):
+    platform: str
+    content_type: str
+    content: str
+    timezone: str
+    strategy: str
+
 class SuggestResponse(BaseModel):
-    best_iso_utc: str           # ISO UTC timestamp for the next occurrence
-    best_local_pretty: str      # human friendly in the requested timezone
-    platform: Platform
+    best_iso_utc: str
+    best_local_pretty: str
+    data_source: str
+    data_source_explanation: str
+    platform: str
     content_type: str
     top_slots: List[Slot]
-    heatmap: List[List[float]]  # 7x24 normalized grid (Mon..Sun × 0..23)
-    reason: Optional[str] = None
+    heatmap: List[List[float]]
+    reason: StructuredReason
+    found_posts: Optional[List[FoundPostSummary]] = None
+
+# --- NEW: Models for Scheduling (Mocked) ---
+class ScheduleRequest(BaseModel):
+    content: str
+    platform: str
+    schedule_at_iso: str # The UTC ISO 8601 string for when to post
+
+class ScheduleResponse(BaseModel):
+    status: str
+    message: str
+    scheduled_at: Optional[str] = None
