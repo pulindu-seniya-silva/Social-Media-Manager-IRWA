@@ -105,13 +105,18 @@ function ContentModeratorBody() {
       .map((h) => h.trim())
       .filter((h) => !!h);
 
+    // ✅ typed, safe creator_request_id (fixes "Unexpected any")
+    const creatorRequestId =
+      typeof crypto !== "undefined" && typeof (crypto as Crypto).randomUUID === "function"
+        ? (crypto as Crypto).randomUUID()
+        : Math.random().toString(36).slice(2);
+
     const payload = {
       caption,
       hashtags: tags,
       platform: platform.toLowerCase(),
       policy,
-      creator_request_id:
-        (globalThis as any).crypto?.randomUUID?.() || Math.random().toString(36).slice(2),
+      creator_request_id: creatorRequestId,
     };
 
     setLoading(true);
@@ -143,7 +148,8 @@ function ContentModeratorBody() {
     } finally {
       setLoading(false);
     }
-  }, [API, autoForward, caption, hashtags, platform, policy]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoForward, caption, hashtags, platform, policy]); // ❗ removed API from deps (module constant)
 
   // ✅ Auto-paste only (no auto-run)
   useEffect(() => {
