@@ -24,7 +24,7 @@ type CreatorDraft = {
 // Config
 // -----------------------------
 const API = process.env.NEXT_PUBLIC_API_BASE; // e.g. http://127.0.0.1:8000
-const SCHEDULER_PATH = "/scheduler";
+const SCHEDULER_PATH = "/post_scheduler";
 const CREATOR_PATH = "/content_creator";
 
 function SignalBar({ label, value }: { label: string; value: number }) {
