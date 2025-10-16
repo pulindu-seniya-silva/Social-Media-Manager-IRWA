@@ -1,11 +1,14 @@
  
 
 from fastapi import FastAPI, APIRouter
+from fastapi import Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 import openai
 from dotenv import load_dotenv
+from datetime import datetime
+from typing import Dict, Tuple
 
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -40,6 +43,61 @@ class HKRequest(BaseModel):
     platform: str = "general"
 
 router = APIRouter()
+
+# -----------------------------
+# Backend Pricing Model (simple)
+# -----------------------------
+# Plans: free | pro | team
+# - text generations per day: 20 | 300 | 1000
+# - image generation allowed:  False | True | True
+
+PlanName = str  # 'free' | 'pro' | 'team'
+
+PLAN_LIMITS: Dict[PlanName, Dict[str, object]] = {
+    "free": {"gensPerDay": 20, "imageRegen": False, "label": "Free"},
+    "pro": {"gensPerDay": 300, "imageRegen": True, "label": "Pro"},
+    "team": {"gensPerDay": 1000, "imageRegen": True, "label": "Team"},
+}
+
+# In-memory usage store: key = (client_key, date_str) -> count
+_USAGE_STORE: Dict[Tuple[str, str], int] = {}
+
+def _today_key() -> str:
+    d = datetime.utcnow()
+    return f"{d.year}-{d.month:02d}-{d.day:02d}"
+
+def _client_key_from_request(req: Request) -> str:
+    # Prefer explicit client id header; fallback to remote IP
+    client_id = req.headers.get("X-Client-Id")
+    if client_id:
+        return f"cid:{client_id}"
+    ip = (req.client.host if req.client else "unknown")
+    return f"ip:{ip}"
+
+def _plan_from_headers(req: Request) -> PlanName:
+    p = (req.headers.get("X-Plan") or "free").strip().lower()
+    return p if p in PLAN_LIMITS else "free"
+
+def _get_usage(req: Request) -> int:
+    key = (_client_key_from_request(req), _today_key())
+    return _USAGE_STORE.get(key, 0)
+
+def _bump_usage(req: Request) -> int:
+    key = (_client_key_from_request(req), _today_key())
+    _USAGE_STORE[key] = _USAGE_STORE.get(key, 0) + 1
+    return _USAGE_STORE[key]
+
+def _check_and_bump_generation_allowance(req: Request, plan: PlanName):
+    limit = int(PLAN_LIMITS[plan]["gensPerDay"])  # type: ignore[index]
+    used = _get_usage(req)
+    if used >= limit:
+        label = PLAN_LIMITS[plan]["label"]  # type: ignore[index]
+        raise HTTPException(status_code=429, detail=f"Daily limit reached for {label} plan ({used}/{limit}). Upgrade to increase limits.")
+    _bump_usage(req)
+
+def _require_image_allowed(plan: PlanName):
+    if not bool(PLAN_LIMITS[plan]["imageRegen"]):  # type: ignore[index]
+        raise HTTPException(status_code=402, detail="Image generation is available on Pro/Team plans. Upgrade to proceed.")
 
 # Platform-specific guidelines
 PLATFORM_GUIDELINES = {
@@ -76,8 +134,12 @@ class ImageVariationRequest(BaseModel):
     size: str = "1024x1024"
 
 @router.post("/generate-content")
-async def generate_content(req: ContentRequest):
+async def generate_content(req: ContentRequest, request: Request):
     try:
+        # Pricing: enforce per-day text generation limits
+        plan = _plan_from_headers(request)
+        _check_and_bump_generation_allowance(request, plan)
+
         platform_guide = PLATFORM_GUIDELINES.get(req.platform, PLATFORM_GUIDELINES["general"])
         tone_guide = TONE_GUIDELINES.get(req.tone, TONE_GUIDELINES["professional"])
 
@@ -181,8 +243,12 @@ async def generate_keywords(req: HKRequest):
         return {"keywords": [], "error": str(e)}
 
 @router.post("/generate-image")
-async def generate_image(req: ImageRequest):
+async def generate_image(req: ImageRequest, request: Request):
     try:
+        # Pricing: require image allowed for plan
+        plan = _plan_from_headers(request)
+        _require_image_allowed(plan)
+
         # Create a more detailed prompt for better image generation
         if req.content:
             image_prompt = f"""
@@ -229,8 +295,13 @@ async def generate_image(req: ImageRequest):
             return {"error": f"Error generating image: {str(e2)}"}
 
 @router.post("/generate-content-from-image")
-async def generate_content_from_image(req: ImageContentRequest):
+async def generate_content_from_image(req: ImageContentRequest, request: Request):
     try:
+        # Pricing: enforce per-day text generation limits; also gate image-vision by plan
+        plan = _plan_from_headers(request)
+        _require_image_allowed(plan)
+        _check_and_bump_generation_allowance(request, plan)
+
         platform_guide = PLATFORM_GUIDELINES.get(req.platform, PLATFORM_GUIDELINES["general"])
         tone_guide = TONE_GUIDELINES.get(req.tone, TONE_GUIDELINES["professional"])
 
@@ -280,10 +351,14 @@ async def generate_content_from_image(req: ImageContentRequest):
         return {"error": str(e), "content": ""}
 
 @router.post("/generate-image-variation")
-async def generate_image_variation(req: ImageVariationRequest):
+async def generate_image_variation(req: ImageVariationRequest, request: Request):
     import base64
     import tempfile
     try:
+        # Pricing: require image allowed for plan
+        plan = _plan_from_headers(request)
+        _require_image_allowed(plan)
+
         # Decode base64 image into a temp file
         raw = base64.b64decode(req.image_base64)
         with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
