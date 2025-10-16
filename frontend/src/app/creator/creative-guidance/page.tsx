@@ -4,6 +4,18 @@ import React, { useMemo, useState } from 'react';
 
 const API_BASE = process.env.NEXT_PUBLIC_CHAT_BASE || 'http://127.0.0.1:8000';
 
+type PlanName = 'free' | 'pro' | 'team';
+function loadPlan(): PlanName {
+  try { return (localStorage.getItem('plan') as PlanName) || 'free'; } catch { return 'free'; }
+}
+function ensureClientId(): string {
+  try {
+    let cid = localStorage.getItem('clientId');
+    if (!cid) { cid = 'cid-' + Math.random().toString(36).slice(2); localStorage.setItem('clientId', cid); }
+    return cid;
+  } catch { return 'cid-anon'; }
+}
+
 export default function CreativeGuidancePage() {
   const [url, setUrl] = useState('');
   const [summary, setSummary] = useState('');
@@ -17,6 +29,15 @@ export default function CreativeGuidancePage() {
   const [loadingAsk, setLoadingAsk] = useState(false);
   const [loadingDraft, setLoadingDraft] = useState(false);
   const [error, setError] = useState('');
+  const [plan, setPlan] = useState<PlanName>('free');
+  const [clientId, setClientId] = useState<string>('cid-anon');
+
+  React.useEffect(() => {
+    setPlan(loadPlan());
+    setClientId(ensureClientId());
+  }, []);
+
+  const authHeaders = { 'X-Plan': plan, 'X-Client-Id': clientId } as const;
 
   const canAnalyze = useMemo(() => /^https?:\/\//.test(url), [url]);
 
@@ -28,7 +49,7 @@ export default function CreativeGuidancePage() {
     try {
       const res = await fetch(`${API_BASE}/engagement/analyze`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ url }),
       });
       const data = await res.json();
@@ -49,7 +70,7 @@ export default function CreativeGuidancePage() {
     try {
       const res = await fetch(`${API_BASE}/engagement/qa`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ url, question, summary_hint: summary || undefined }),
       });
       const data = await res.json();
@@ -70,7 +91,7 @@ export default function CreativeGuidancePage() {
     try {
       const res = await fetch(`${API_BASE}/engagement/draft`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           url,
           platform,
@@ -95,6 +116,19 @@ export default function CreativeGuidancePage() {
         <header className="text-center mb-6">
           <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r text-white bg-clip-text mb-3">💡 Creative Guidance</h1>
           <p className="text-gray-700 dark:text-gray-300 text-lg">Paste a public post/article link, ask questions, and draft your own post.</p>
+          <div className="mt-2 inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 bg-white/70 dark:bg-gray-800 px-3 py-1 rounded-lg">
+            Plan: <b className="ml-1 capitalize">{plan}</b>
+            <button
+              onClick={() => {
+                const next: PlanName = plan === 'free' ? 'pro' : plan === 'pro' ? 'team' : 'free';
+                try { localStorage.setItem('plan', next); } catch {}
+                setPlan(next);
+              }}
+              className="ml-2 px-2 py-0.5 rounded bg-gradient-to-r from-purple-600 to-pink-500 text-white"
+            >
+              Switch
+            </button>
+          </div>
         </header>
 
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mb-8">

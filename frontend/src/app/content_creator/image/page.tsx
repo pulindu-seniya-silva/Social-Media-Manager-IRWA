@@ -5,6 +5,18 @@ import Image from 'next/image';
 
 const API_BASE = process.env.NEXT_PUBLIC_CHAT_BASE || 'http://127.0.0.1:8000';
 
+type PlanName = 'free' | 'pro' | 'team';
+function loadPlan(): PlanName {
+  try { return (localStorage.getItem('plan') as PlanName) || 'free'; } catch { return 'free'; }
+}
+function ensureClientId(): string {
+  try {
+    let cid = localStorage.getItem('clientId');
+    if (!cid) { cid = 'cid-' + Math.random().toString(36).slice(2); localStorage.setItem('clientId', cid); }
+    return cid;
+  } catch { return 'cid-anon'; }
+}
+
 export default function ImageAnalyzePage() {
   const [uploadPreview, setUploadPreview] = useState<string>('');
   const [uploadBase64, setUploadBase64] = useState<string>('');
@@ -17,6 +29,15 @@ export default function ImageAnalyzePage() {
   const [error, setError] = useState('');
   const [loadingCaption, setLoadingCaption] = useState(false);
   const [loadingVariation, setLoadingVariation] = useState(false);
+  const [plan, setPlan] = useState<PlanName>('free');
+  const [clientId, setClientId] = useState<string>('cid-anon');
+
+  React.useEffect(() => {
+    setPlan(loadPlan());
+    setClientId(ensureClientId());
+  }, []);
+
+  const authHeaders = { 'X-Plan': plan, 'X-Client-Id': clientId } as const;
 
   const onImageSelect = (file: File | null) => {
     if (!file) {
@@ -46,7 +67,7 @@ export default function ImageAnalyzePage() {
     try {
       const res = await fetch(`${API_BASE}/content/generate-content-from-image`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           image_base64: uploadBase64,
           platform,
@@ -76,7 +97,7 @@ export default function ImageAnalyzePage() {
     try {
       const res = await fetch(`${API_BASE}/content/generate-image-variation`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ image_base64: uploadBase64, prompt: topic || undefined, size: '1024x1024' }),
       });
       const data = await res.json();

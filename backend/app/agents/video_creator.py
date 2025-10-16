@@ -1,5 +1,5 @@
 # app/agents/video_creator.py
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Request, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import os
@@ -8,6 +8,7 @@ import httpx
 import asyncio
 import uuid
 from datetime import datetime
+from typing import Dict as _Dict, Tuple as _Tuple
 from dotenv import load_dotenv
 from fastapi.responses import FileResponse
 from pathlib import Path
@@ -21,6 +22,59 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 RUNWAY_API_KEY = os.getenv("RUNWAY_API_KEY")
 
 router = APIRouter()
+
+# -----------------------------
+# Backend Pricing Model (simple)
+# -----------------------------
+# Plans: free | pro | team
+# - text generations per day: 20 | 300 | 1000
+# - media generation (video) allowed:  False | True | True
+
+PlanName = str  # 'free' | 'pro' | 'team'
+
+PLAN_LIMITS: _Dict[PlanName, _Dict[str, object]] = {
+    "free": {"gensPerDay": 20, "mediaAllowed": False, "label": "Free"},
+    "pro": {"gensPerDay": 300, "mediaAllowed": True, "label": "Pro"},
+    "team": {"gensPerDay": 1000, "mediaAllowed": True, "label": "Team"},
+}
+
+_USAGE_STORE: _Dict[_Tuple[str, str], int] = {}
+
+def _today_key() -> str:
+    d = datetime.utcnow()
+    return f"{d.year}-{d.month:02d}-{d.day:02d}"
+
+def _client_key(req: Request) -> str:
+    cid = req.headers.get("X-Client-Id")
+    if cid:
+        return f"cid:{cid}"
+    ip = (req.client.host if req.client else "unknown")
+    return f"ip:{ip}"
+
+def _plan(req: Request) -> PlanName:
+    p = (req.headers.get("X-Plan") or "free").strip().lower()
+    return p if p in PLAN_LIMITS else "free"
+
+def _get_usage(req: Request) -> int:
+    key = (_client_key(req), _today_key())
+    return _USAGE_STORE.get(key, 0)
+
+def _bump_usage(req: Request) -> int:
+    key = (_client_key(req), _today_key())
+    _USAGE_STORE[key] = _USAGE_STORE.get(key, 0) + 1
+    return _USAGE_STORE[key]
+
+def _check_and_bump_text_allowance(req: Request, plan: PlanName):
+    limit = int(PLAN_LIMITS[plan]["gensPerDay"])  # type: ignore[index]
+    used = _get_usage(req)
+    if used >= limit:
+        label = PLAN_LIMITS[plan]["label"]  # type: ignore[index]
+        raise HTTPException(status_code=429, detail=f"Daily limit reached for {label} plan ({used}/{limit}). Upgrade to increase limits.")
+    _bump_usage(req)
+
+def _require_media_allowed(plan: PlanName):
+    if not bool(PLAN_LIMITS[plan]["mediaAllowed"]):  # type: ignore[index]
+        raise HTTPException(status_code=402, detail="Video generation is available on Pro/Team plans. Upgrade to proceed.")
 
 # Request/Response Models
 class VideoScriptRequest(BaseModel):
@@ -99,9 +153,10 @@ STYLE_GUIDELINES = {
 }
 
 @router.post("/generate-script")
-async def generate_script(req: VideoScriptRequest):
+async def generate_script(req: VideoScriptRequest, request: Request):
     """Generate a video script based on topic and requirements."""
     try:
+        _check_and_bump_text_allowance(request, _plan(request))
         platform_guide = PLATFORM_GUIDELINES.get(req.platform, PLATFORM_GUIDELINES["general"])
         style_guide = STYLE_GUIDELINES.get(req.style, STYLE_GUIDELINES["professional"])
         
@@ -150,9 +205,10 @@ async def generate_script(req: VideoScriptRequest):
         return {"error": f"Error generating script: {str(e)}"}
 
 @router.post("/generate-outline")
-async def generate_outline(req: VideoOutlineRequest):
+async def generate_outline(req: VideoOutlineRequest, request: Request):
     """Generate a video outline/storyboard structure."""
     try:
+        _check_and_bump_text_allowance(request, _plan(request))
         platform_guide = PLATFORM_GUIDELINES.get(req.platform, PLATFORM_GUIDELINES["general"])
         style_guide = STYLE_GUIDELINES.get(req.style, STYLE_GUIDELINES["professional"])
         
@@ -197,9 +253,10 @@ async def generate_outline(req: VideoOutlineRequest):
         return {"error": f"Error generating outline: {str(e)}"}
 
 @router.post("/generate-scene-details")
-async def generate_scene_details(req: VideoSceneRequest):
+async def generate_scene_details(req: VideoSceneRequest, request: Request):
     """Generate detailed scene information for a specific scene."""
     try:
+        _check_and_bump_text_allowance(request, _plan(request))
         prompt = f"""
         Create detailed scene information for scene {req.scene_number} of a video.
         
@@ -242,9 +299,10 @@ async def generate_scene_details(req: VideoSceneRequest):
         return {"error": f"Error generating scene details: {str(e)}"}
 
 @router.post("/generate-video-ideas")
-async def generate_video_ideas(req: VideoOutlineRequest):
+async def generate_video_ideas(req: VideoOutlineRequest, request: Request):
     """Generate multiple video ideas based on a topic."""
     try:
+        _check_and_bump_text_allowance(request, _plan(request))
         platform_guide = PLATFORM_GUIDELINES.get(req.platform, PLATFORM_GUIDELINES["general"])
         
         prompt = f"""
@@ -289,9 +347,10 @@ async def generate_video_ideas(req: VideoOutlineRequest):
         return {"error": f"Error generating video ideas: {str(e)}"}
 
 @router.post("/optimize-for-platform")
-async def optimize_for_platform(req: VideoGenerationRequest):
+async def optimize_for_platform(req: VideoGenerationRequest, request: Request):
     """Optimize existing script for specific platform requirements."""
     try:
+        _check_and_bump_text_allowance(request, _plan(request))
         platform_guide = PLATFORM_GUIDELINES.get(req.platform, PLATFORM_GUIDELINES["general"])
         
         prompt = f"""
@@ -522,9 +581,13 @@ async def process_video_generation(video_id: str, script: str, platform: str, st
         })
 
 @router.post("/create-video", response_model=VideoStatusResponse)
-async def create_video(request: VideoCreateRequest, background_tasks: BackgroundTasks):
+async def create_video(request: VideoCreateRequest, background_tasks: BackgroundTasks, http_request: Request):
     """Start video generation process."""
     try:
+        # Pricing: require media allowed for plan; bump usage (counts as a generation)
+        pl = _plan(http_request)
+        _require_media_allowed(pl)
+        _check_and_bump_text_allowance(http_request, pl)
         # If no Runway API key, fall back to demo video immediately
         if not RUNWAY_API_KEY:
             demo = _make_demo_video(
@@ -693,7 +756,10 @@ def _make_demo_video(script: str, title: str, duration: int, width: int, height:
     }
 
 @router.post("/create-demo-video")
-async def create_demo_video(req: DemoVideoRequest):
+async def create_demo_video(req: DemoVideoRequest, request: Request):
+    # Pricing: require media allowed for plan
+    _require_media_allowed(_plan(request))
+    _check_and_bump_text_allowance(request, _plan(request))
     return _make_demo_video(
         script=req.script,
         title=req.title,
