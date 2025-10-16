@@ -6,7 +6,7 @@ import Link1 from "../../../public/Link.png";
 
 import Image from "next/image";
 import Link from "next/link";
-
+// This is the main landing page for the AI Agent Content Creator product.
 export default function ProductPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 to-purple-900">
