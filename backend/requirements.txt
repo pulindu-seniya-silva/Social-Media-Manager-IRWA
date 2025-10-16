@@ -14,6 +14,9 @@ numpy
 python-dateutil 
 openpyxl
 openai
+python-multipart
+xlrd
+google-search-results
 pytz
 dateparser
 beautifulsoup4
