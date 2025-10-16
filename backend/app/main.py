@@ -52,9 +52,28 @@ app.include_router(content_creator_router, prefix="/content")
 from app.agents.content_moderator import router as content_moderator_router
 app.include_router(content_moderator_router, prefix="/moderator")
 
+
 from app.agents.video_creator import router as video_creator_router
 app.include_router(video_creator_router, prefix="/video")
 
 from app.agents.engagement import router as engagement_router
 app.include_router(engagement_router, prefix="/engagement")
+
+# engagement analyzer routes - added by layara
+
+# backend/app/routes/main.py
+from .routes.engagement import router as engagement_router
+
+app = FastAPI(title="Engagement Analyzer Agent")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "*"],  # adjust for your frontend origin
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(engagement_router)
+
 
