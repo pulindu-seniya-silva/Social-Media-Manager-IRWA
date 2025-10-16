@@ -1,151 +1,180 @@
-# backend/app/agents/engagement.py
+from fastapi import APIRouter
+from pydantic import BaseModel, HttpUrl
+import httpx
 import os
-import json
-import re
-from typing import List, Dict, Any
-from openai import OpenAI
+import openai
+from dotenv import load_dotenv
 
-# Load API key from env (use python-dotenv elsewhere)
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# Simple file cache so you don't call the LLM repeatedly during development
-CACHE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "sentiment_cache.json")
-os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
-try:
-    with open(CACHE_PATH, "r", encoding="utf-8") as f:
-        cache = json.load(f)
-except Exception:
-    cache = {}
-    with open(CACHE_PATH, "w", encoding="utf-8") as f:
-        json.dump(cache, f)
+router = APIRouter()
 
-def _save_cache():
-    with open(CACHE_PATH, "w", encoding="utf-8") as f:
-        json.dump(cache, f, ensure_ascii=False, indent=2)
 
-def _extract_json_from_text(text: str):
-    # Try to pull the first JSON object / array from LLM text
-    m = re.search(r'(\[.*\]|\{.*\})', text, re.S)
-    if not m:
-        return None
+class AnalyzeRequest(BaseModel):
+    url: HttpUrl
+
+
+class QARequest(BaseModel):
+    url: HttpUrl
+    question: str
+    summary_hint: str | None = None
+
+
+class DraftRequest(BaseModel):
+    url: HttpUrl
+    platform: str = "general"
+    tone: str = "professional"
+    word_limit: int | None = None
+    summary_hint: str | None = None
+
+
+PLATFORM_GUIDELINES = {
+    "instagram": "Create an engaging Instagram post with relevant hashtags. Keep it visual and appealing.",
+    "twitter": "Create a concise Twitter post (under 280 characters) that's engaging and encourages retweets.",
+    "facebook": "Create a friendly Facebook post that encourages comments and sharing.",
+    "linkedin": "Create a professional LinkedIn post that showcases expertise and encourages discussion.",
+    "tiktok": "Create a catchy TikTok caption that's trendy and encourages engagement.",
+    "general": "Create an engaging social media post that works across platforms.",
+}
+
+TONE_GUIDELINES = {
+    "professional": "Use a professional and polished tone suitable for business contexts.",
+    "casual": "Use a casual, friendly tone that feels personal and approachable.",
+    "funny": "Use humor and wit to make the post entertaining and shareable.",
+    "inspirational": "Use an uplifting and motivational tone that inspires your audience.",
+    "urgent": "Create a sense of urgency or importance to drive immediate action.",
+}
+
+
+def extract_readable_text(html: str) -> str:
     try:
-        return json.loads(m.group(0))
+        from bs4 import BeautifulSoup
     except Exception:
-        return None
+        # If bs4 is not available, fall back to returning a trimmed HTML string
+        return html[:20000]
 
-def classify_with_llm(comments: List[str]) -> List[Dict[str, str]]:
-    """
-    Batched LLM classification. Returns list of {"comment": ..., "sentiment": ...}
-    If no API key found or the LLM fails, raises an exception (caller will fallback).
-    """
-    if not comments:
-        return []
+    soup = BeautifulSoup(html, "html.parser")
+    # Remove script/style/noscript
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
 
-    # 1) Check cache
-    out = [None] * len(comments)
-    to_query = []
-    idx_map = []
-    for i, c in enumerate(comments):
-        key = c.strip()
-        if key in cache:
-            out[i] = {"comment": c, "sentiment": cache[key]}
-        else:
-            idx_map.append(i)
-            to_query.append(c)
+    # Pull key metas
+    title = (soup.title.string.strip() if soup.title and soup.title.string else "")
+    og_title = soup.find("meta", property="og:title")
+    og_desc = soup.find("meta", property="og:description")
+    meta_desc = soup.find("meta", attrs={"name": "description"})
+    head_bits = []
+    if og_title and og_title.get("content"):
+        head_bits.append(og_title.get("content").strip())
+    elif title:
+        head_bits.append(title)
+    if og_desc and og_desc.get("content"):
+        head_bits.append(og_desc.get("content").strip())
+    elif meta_desc and meta_desc.get("content"):
+        head_bits.append(meta_desc.get("content").strip())
 
-    # Nothing to query
-    if not to_query or client is None:
-        # Fill missing with fallback (this case should not happen if OpenAI API is set)
-        for i, item in enumerate(out):
-            if item is None:
-                out[i] = {"comment": comments[i], "sentiment": "Neutral"}
-        return out
+    # Visible text
+    body_text = soup.get_text(" ")
+    text = ("\n\n".join(head_bits) + "\n\n" + body_text).strip()
+    # Normalize whitespace and cap size for token limits
+    text = " ".join(text.split())
+    return text[:20000]
 
-    # 2) Build a clear system prompt telling LLM to return strict JSON only
-    system_msg = {
-        "role": "system",
-        "content": (
-            "You are a sentiment classifier. You will be given a JSON array of strings (comments). "
-            "Return ONLY a JSON array of objects in the same order, each object having keys "
-            "\"comment\" and \"sentiment\" where sentiment is exactly one of: Positive, Neutral, Negative. "
-            "Do not include extra explanation text — only the JSON array."
+
+async def fetch_url_text(url: str) -> str:
+    timeout = httpx.Timeout(15.0)
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        resp = await client.get(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"
+        })
+        resp.raise_for_status()
+        html = resp.text
+        return extract_readable_text(html)
+
+
+@router.post("/analyze")
+async def analyze_link(req: AnalyzeRequest):
+    try:
+        html = await fetch_url_text(str(req.url))
+        system = (
+            "You are a skilled social media analyst. Given raw HTML of a public post or article, "
+            "extract the core content in your own words (avoid boilerplate). Return a concise summary, "
+            "key points, notable entities, and 5 suggested hashtags."
         )
-    }
-    user_msg = {"role": "user", "content": json.dumps(to_query, ensure_ascii=False)}
+        user = "Content follows (cleaned). Summarize and extract signals for social media.\n\n" + html
+        resp = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            temperature=0.4,
+            max_tokens=500,
+        )
+        content = resp.choices[0].message.content.strip()
+        return {"summary": content}
+    except Exception as e:
+        return {"error": str(e)}
 
-    # 3) Call the LLM (model can be changed)
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",  # Change model if needed
-        messages=[system_msg, user_msg],
-        temperature=0.0
-    )
-    raw = resp.choices[0].message.content
 
-    parsed = _extract_json_from_text(raw)
-    if parsed is None:
-        # Try a fallback parse attempt; if still fails, raise so caller can fallback
-        raise RuntimeError("Failed to parse JSON from LLM response")
-
-    # Normalize parsed result
-    normalized = []
-    if isinstance(parsed, list) and parsed and isinstance(parsed[0], str):
-        # If LLM returned list of labels ["Positive","Negative"...] => map them to comments
-        for c, label in zip(to_query, parsed):
-            normalized.append({"comment": c, "sentiment": label.strip().capitalize()})
-    else:
-        # Assume list of objects
-        for item in parsed:
-            if isinstance(item, dict):
-                label = item.get("sentiment") or item.get("label") or item.get("sent")
-                label = (label.strip().capitalize() if isinstance(label, str) else "Neutral")
-                # Prefer the comment returned by LLM (but keep our original if missing)
-                comment_text = item.get("comment") if item.get("comment") else to_query[len(normalized)]
-                normalized.append({"comment": comment_text, "sentiment": label})
-            else:
-                normalized.append({"comment": str(item), "sentiment": "Neutral"})
-
-    # Store results in cache and return
-    for idx, res_item in zip(idx_map, normalized):
-        out[idx] = res_item
-        cache_key = res_item["comment"].strip()
-        cache[cache_key] = res_item["sentiment"]
-    _save_cache()
-    return out
-
-def analyze_post(payload: Dict[str, Any]) -> Dict[str, Any]:
-    # Compute engagement
-    likes = int(payload.get("likes", 0))
-    shares = int(payload.get("shares", 0))
-    reach = max(1, int(payload.get("reach", 1)))
-    comments = payload.get("comments", []) or []
-    follower_change = int(payload.get("follower_change", 0))
-
-    engagement_rate = round(((likes + shares + len(comments)) / reach) * 100, 2)
-
-    # Only use LLM for sentiment analysis
+@router.post("/qa")
+async def qa_on_link(req: QARequest):
     try:
-        sentiments = classify_with_llm(comments)
-    except Exception:
-        sentiments = [{"comment": c, "sentiment": "Neutral"} for c in comments]  # If LLM fails, fallback to Neutral
+        html = await fetch_url_text(str(req.url))
+        system = (
+            "You answer questions about the provided public post/article content. If unsure, say so."
+        )
+        user = (
+            f"Question: {req.question}\n\n"
+            "Use this HTML as context (ignore boilerplate, focus on content):\n\n" + html
+        )
+        if req.summary_hint:
+            user = req.summary_hint + "\n\n" + user
+        resp = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            temperature=0.3,
+            max_tokens=400,
+        )
+        answer = resp.choices[0].message.content.strip()
+        return {"answer": answer}
+    except Exception as e:
+        return {"error": str(e)}
 
-    breakdown = {"positive": 0, "neutral": 0, "negative": 0}
-    for s in sentiments:
-        lab = (s.get("sentiment") or "Neutral").lower()
-        if lab.startswith("pos"):
-            breakdown["positive"] += 1
-        elif lab.startswith("neg"):
-            breakdown["negative"] += 1
-        else:
-            breakdown["neutral"] += 1
 
-    return {
-        "postId": payload.get("postId"),
-        "engagementRate": engagement_rate,
-        "likes": likes,
-        "shares": shares,
-        "reach": reach,
-        "follower_change": follower_change,
-        "sentiments": sentiments,       # list of {comment, sentiment}
-        "breakdown": breakdown
-    }
+@router.post("/draft")
+async def draft_from_link(req: DraftRequest):
+    try:
+        html = await fetch_url_text(str(req.url))
+        platform_guide = PLATFORM_GUIDELINES.get(req.platform, PLATFORM_GUIDELINES["general"])
+        tone_guide = TONE_GUIDELINES.get(req.tone, TONE_GUIDELINES["professional"])
+        word_part = f"Limit to about {req.word_limit} words." if req.word_limit else "Keep it concise."
+        system = (
+            "You create engaging social media captions based on a referenced post/article. "
+            "Respect platform/tone guidance and include 2-4 relevant hashtags when appropriate."
+        )
+        user = (
+            f"Platform: {platform_guide}\nTone: {tone_guide}\n{word_part}\n\n"
+            "Use the following HTML as content reference (ignore boilerplate):\n\n" + html
+        )
+        if req.summary_hint:
+            user = req.summary_hint + "\n\n" + user
+        resp = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            temperature=0.7,
+            max_tokens=220,
+        )
+        caption = resp.choices[0].message.content.strip()
+        return {"content": caption}
+    except Exception as e:
+        return {"error": str(e)}
+
+

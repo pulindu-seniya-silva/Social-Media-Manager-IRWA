@@ -40,7 +40,7 @@ export default function SiteHeader() {
 
         {/* Desktop Nav */}
         <ul className="hidden md:flex items-center gap-6 text-sm font-medium">
-          <li><Link href="/content_creator" className="hover:text-blue-600">Content Creator</Link></li>
+          <li><Link href="/content_creator_main" className="hover:text-blue-600">Content Creator</Link></li>
           <li><Link href="/contentModerator" className="hover:text-blue-600">Content Moderator</Link></li>
           <li><Link href="/post_scheduler" className="hover:text-blue-600">Post Scheduler</Link></li>
           <li><Link href="/engagement_analyzer" className="hover:text-blue-600">Engagement Analyzer</Link></li>
@@ -107,9 +107,9 @@ export default function SiteHeader() {
               </div>
 
               <nav className="mt-4 space-y-1 text-sm">
-                <Link href="/content_creator" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-white/10">Content Creator</Link>
+                <Link href="/content_creator_main" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-white/10">Content Creator</Link>
                 <Link href="/contentModerator" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-white/10">Content Moderator</Link>
-                <Link href="/scheduler" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-white/10">Post Scheduler</Link>
+                <Link href="/post_scheduler" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-white/10">Post Scheduler</Link>
                 <Link href="/analyzer" onClick={close} className="block rounded-lg px-3 py-2 hover:bg-white/10">Engagement Analyzer</Link>
 
                 <Link
