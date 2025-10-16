@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, FC, PropsWithChildren } from "react";
+import Image from "next/image"; // FIX: Import the next/image component
 import {
-  LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend
+  LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer
 } from "recharts";
 import {
   Sparkles, Lightbulb, Search, Bot, UploadCloud, FileCheck2, TrendingUp, FileText, BarChart2, ChevronDown, Rocket, Megaphone, Target,
@@ -48,6 +49,17 @@ type InitialAnalysisResponse = {
   average_engagement_rate: number;
   posts: PostDetails[];
 };
+
+// FIX: Add a type for the API error response
+type ApiError = {
+  detail?: string;
+};
+
+// FIX: Add a specific type for the Recharts Tooltip props
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: PostDetails }>;
+}
 
 // --- Reusable UI Components ---
 const Card: FC<PropsWithChildren<{ title: string; icon: React.ReactNode; className?: string; }>> = ({ title, icon, children, className = "" }) => (
@@ -100,13 +112,19 @@ const AnalysisDashboard: FC<{ initialReport: InitialAnalysisResponse }> = ({ ini
         body: JSON.stringify(selectedPost),
       });
       if (!response.ok) {
-        const errData = await response.json();
+        // FIX: Use a specific type for the error data
+        const errData: ApiError = await response.json();
         throw new Error(errData.detail || `Server error: ${response.statusText}`);
       }
       const data: TopPostAnalysis = await response.json();
       setDetailedAnalysis(data);
-    } catch (err: any) {
-      setError(`Failed to analyze post: ${err.message}`);
+    // FIX: Catch error as 'unknown' and then check its type
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(`Failed to analyze post: ${err.message}`);
+      } else {
+        setError("An unknown error occurred while analyzing the post.");
+      }
     } finally {
       setIsPostLoading(false);
     }
@@ -122,7 +140,8 @@ const AnalysisDashboard: FC<{ initialReport: InitialAnalysisResponse }> = ({ ini
   };
 
   // Custom Tooltip for the line chart
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  // FIX: Use specific props type and remove unused 'label'
+  const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
@@ -167,7 +186,8 @@ const AnalysisDashboard: FC<{ initialReport: InitialAnalysisResponse }> = ({ ini
             {detailedAnalysis && (
                 <>
                 <Card title="Selected Post Performance" icon={<BarChart2 className="size-5 text-fuchsia-400" />}>
-                    <p className="text-sm italic text-zinc-300 p-3 mb-4 rounded-lg bg-[#110b1f]">"{detailedAnalysis.post_title}"</p>
+                    {/* FIX: Use curly braces to correctly handle quotes in JSX */}
+                    <p className="text-sm italic text-zinc-300 p-3 mb-4 rounded-lg bg-[#110b1f]">{`"${detailedAnalysis.post_title}"`}</p>
                     <div className="grid grid-cols-2 gap-4">
                     <div className="bg-[#110b1f] p-4 rounded-lg text-center"><p className="text-2xl font-bold text-emerald-400">{detailedAnalysis.engagement_rate.toFixed(1)}%</p><p className="text-xs text-zinc-400">Engagement Rate</p></div>
                     <div className="bg-[#110b1f] p-4 rounded-lg text-center"><p className="text-2xl font-bold text-fuchsia-300">{detailedAnalysis.likes}</p><p className="text-xs text-zinc-400">Likes</p></div>
@@ -197,7 +217,6 @@ const AnalysisDashboard: FC<{ initialReport: InitialAnalysisResponse }> = ({ ini
               </motion.div>
             ) : detailedAnalysis ? (
               <motion.div key="results" className="space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                {/* --- NEW LINE CHART CARD --- */}
                 <Card title="Engagement Rate Context" icon={<TrendingUp className="size-5 text-fuchsia-400" />}>
                     <div className="h-64 w-full">
                         <ResponsiveContainer>
@@ -259,20 +278,21 @@ const AnalysisDashboard: FC<{ initialReport: InitialAnalysisResponse }> = ({ ini
                     <ul className="list-disc list-inside space-y-2">{detailedAnalysis.external_context_summary.split(/(?<=\.)\s+/).map((s,i) => <li key={i}>{s.trim()}</li>)}</ul>
                   </div>
                   {detailedAnalysis.relevant_urls.length > 0 && (
-                     <div className="mt-4">
-                        <p className="text-xs text-fuchsia-300 mb-3 uppercase tracking-wide font-semibold">🔗 Trending Mentions & Sources</p>
-                        <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-fuchsia-500/50 scrollbar-track-transparent">
-                            {detailedAnalysis.relevant_urls.map((url) => {
-                                const domain = new URL(url).hostname;
-                                return (
-                                <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 w-60 bg-[#1a112f]/80 border border-[#34285a] hover:border-fuchsia-500/50 rounded-xl p-3 shadow-lg transition-all group" title={url}>
-                                    <div className="flex items-center mb-1 gap-2"><img src={`https://www.google.com/s2/favicons?domain=${domain}`} alt="favicon" className="w-4 h-4 rounded-sm" /><span className="text-sm text-fuchsia-200 font-medium truncate">{domain}</span></div>
-                                    <p className="text-xs text-zinc-400 truncate">{url}</p>
-                                </a>
-                                );
-                            })}
-                        </div>
-                    </div>
+                       <div className="mt-4">
+                           <p className="text-xs text-fuchsia-300 mb-3 uppercase tracking-wide font-semibold">🔗 Trending Mentions & Sources</p>
+                           <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-fuchsia-500/50 scrollbar-track-transparent">
+                               {detailedAnalysis.relevant_urls.map((url) => {
+                                   const domain = new URL(url).hostname;
+                                   return (
+                                   <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 w-60 bg-[#1a112f]/80 border border-[#34285a] hover:border-fuchsia-500/50 rounded-xl p-3 shadow-lg transition-all group" title={url}>
+                                       {/* FIX: Use next/image instead of <img> */}
+                                       <div className="flex items-center mb-1 gap-2"><Image src={`https://www.google.com/s2/favicons?domain=${domain}`} alt="favicon" width={16} height={16} className="rounded-sm" /><span className="text-sm text-fuchsia-200 font-medium truncate">{domain}</span></div>
+                                       <p className="text-xs text-zinc-400 truncate">{url}</p>
+                                   </a>
+                                   );
+                               })}
+                           </div>
+                       </div>
                   )}
                 </Card>
               </motion.div>
@@ -326,13 +346,18 @@ export default function ReportAnalyzerPage() {
           body: formData,
         });
         if (!response.ok) {
-          const errData = await response.json();
+          const errData: ApiError = await response.json();
           throw new Error(errData.detail || `Server error: ${response.statusText}`);
         }
         const data: InitialAnalysisResponse = await response.json();
         setInitialReport(data);
-      } catch (err: any) {
-        setError(err.message);
+      // FIX: Catch error as 'unknown' and then check its type
+      } catch (err) {
+        if (err instanceof Error) {
+            setError(err.message);
+        } else {
+            setError("An unknown error occurred while processing the file.");
+        }
       } finally {
         setIsLoading(false);
       }
