@@ -1,4 +1,4 @@
-"use client"
+ 
 
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
