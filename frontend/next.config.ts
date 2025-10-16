@@ -17,6 +17,17 @@ const nextConfig = {
       },
     ],
   },
+  experimental: {
+    outputFileTracingExcludes: {
+      "*": [
+        "**/backend/**",
+        "**/venv/**",
+        "**/data/**",
+        "**/notebooks/**",
+        "**/tests/**",
+      ],
+    },
+  },
 };
 
 module.exports = nextConfig;

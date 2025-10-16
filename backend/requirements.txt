@@ -17,3 +17,10 @@ openai
 python-multipart
 xlrd
 google-search-results
+pytz
+dateparser
+beautifulsoup4
+lxml
+pillow
+imageio
+imageio-ffmpeg

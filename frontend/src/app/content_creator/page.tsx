@@ -98,6 +98,8 @@ export default function ContentCreatorPage() {
   const [imageLoading, setImageLoading] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [uploadPreview, setUploadPreview] = useState<string>('');
+  const [uploadBase64, setUploadBase64] = useState<string>('');
 
   const [serverHashtags, setServerHashtags] = useState<string[]>([]);
   const [serverKeywords, setServerKeywords] = useState<string[]>([]);
@@ -351,6 +353,77 @@ export default function ContentCreatorPage() {
     }
   };
 
+  const onImageSelect = async (file: File | null) => {
+    if (!file) {
+      setUploadPreview('');
+      setUploadBase64('');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      setUploadPreview(result);
+      const commaIdx = result.indexOf(',');
+      const base64 = commaIdx >= 0 ? result.slice(commaIdx + 1) : result;
+      setUploadBase64(base64);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleGenerateFromImage = async () => {
+    if (!uploadBase64) {
+      setError('Please upload an image first.');
+      return;
+    }
+
+    const limits = PLAN_LIMITS[plan];
+    if (usedToday >= limits.gensPerDay) {
+      setError(
+        `Daily limit reached for ${limits.label} plan (${usedToday}/${limits.gensPerDay}). Click "Upgrade" to increase limits.`
+      );
+      return;
+    }
+
+    setLoading(true);
+    setGeneratedContent('');
+    setError('');
+    setCopied(false);
+    setServerHashtags([]);
+    setServerKeywords([]);
+
+    const userSummary = `Generate FROM IMAGE, platform="${platform}", word_limit="${wordLimit || 'auto'}"`;
+    await saveMessage('user', userSummary);
+
+    try {
+      const res = await fetch('http://127.0.0.1:8000/content/generate-content-from-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_base64: uploadBase64,
+          platform,
+          tone,
+          word_limit: wordLimit === '' ? null : Number(wordLimit),
+          topic: topic || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+      } else {
+        setGeneratedContent(data.content);
+        await saveMessage('assistant', data.content);
+        bumpUsage();
+        setUsedToday((c) => c + 1);
+        loadHistory();
+      }
+    } catch (e) {
+      console.error(e);
+      setError('Failed to generate content from image. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const copyToClipboard = () => {
     navigator.clipboard.writeText(generatedContent);
     setCopied(true);
@@ -560,6 +633,24 @@ export default function ContentCreatorPage() {
                 </p>
               </div>
 
+              {/* Image upload for analysis */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Upload Image (generate caption from image)
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => onImageSelect(e.target.files?.[0] || null)}
+                  className="block w-full text-sm text-gray-700 dark:text-gray-200 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
+                />
+                {uploadPreview && (
+                  <div className="mt-3">
+                    <Image src={uploadPreview} alt="upload preview" width={320} height={320} className="rounded-lg border border-gray-200 dark:border-gray-700 object-contain max-h-48" />
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={handleGenerate}
                 disabled={loading}
@@ -567,6 +658,16 @@ export default function ContentCreatorPage() {
               >
                 {loading ? 'Generating...' : 'Generate Content'}
               </button>
+
+              <div className="mt-3">
+                <button
+                  onClick={handleGenerateFromImage}
+                  disabled={loading || !uploadBase64}
+                  className="w-full py-3 bg-gradient-to-r from-cyan-600 to-blue-500 text-white font-semibold rounded-lg hover:from-cyan-700 hover:to-blue-600 active:scale-95 transform transition disabled:opacity-50 flex items-center justify-center"
+                >
+                  {loading ? 'Generating from image…' : 'Generate From Image'}
+                </button>
+              </div>
             </div>
 
             {/* Error Message */}
