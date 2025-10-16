@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel, HttpUrl
 import httpx
 import os
@@ -93,9 +93,60 @@ async def fetch_url_text(url: str) -> str:
         return extract_readable_text(html)
 
 
+# -----------------------------
+# Backend Pricing Model (simple)
+# -----------------------------
+# Plans: free | pro | team
+# - text generations per day: 20 | 300 | 1000
+
+from datetime import datetime
+from typing import Dict as _Dict, Tuple as _Tuple
+
+PlanName = str
+PLAN_LIMITS: _Dict[PlanName, _Dict[str, object]] = {
+    "free": {"gensPerDay": 20, "label": "Free"},
+    "pro": {"gensPerDay": 300, "label": "Pro"},
+    "team": {"gensPerDay": 1000, "label": "Team"},
+}
+_USAGE_STORE: _Dict[_Tuple[str, str], int] = {}
+
+def _today_key() -> str:
+    d = datetime.utcnow()
+    return f"{d.year}-{d.month:02d}-{d.day:02d}"
+
+def _client_key(req: Request) -> str:
+    cid = req.headers.get("X-Client-Id")
+    if cid:
+        return f"cid:{cid}"
+    ip = (req.client.host if req.client else "unknown")
+    return f"ip:{ip}"
+
+def _plan(req: Request) -> PlanName:
+    p = (req.headers.get("X-Plan") or "free").strip().lower()
+    return p if p in PLAN_LIMITS else "free"
+
+def _get_usage(req: Request) -> int:
+    key = (_client_key(req), _today_key())
+    return _USAGE_STORE.get(key, 0)
+
+def _bump_usage(req: Request) -> int:
+    key = (_client_key(req), _today_key())
+    _USAGE_STORE[key] = _USAGE_STORE.get(key, 0) + 1
+    return _USAGE_STORE[key]
+
+def _check_and_bump_text_allowance(req: Request, plan: PlanName):
+    limit = int(PLAN_LIMITS[plan]["gensPerDay"])  # type: ignore[index]
+    used = _get_usage(req)
+    if used >= limit:
+        label = PLAN_LIMITS[plan]["label"]  # type: ignore[index]
+        raise HTTPException(status_code=429, detail=f"Daily limit reached for {label} plan ({used}/{limit}). Upgrade to increase limits.")
+    _bump_usage(req)
+
+
 @router.post("/analyze")
-async def analyze_link(req: AnalyzeRequest):
+async def analyze_link(req: AnalyzeRequest, request: Request):
     try:
+        _check_and_bump_text_allowance(request, _plan(request))
         html = await fetch_url_text(str(req.url))
         system = (
             "You are a skilled social media analyst. Given raw HTML of a public post or article, "
@@ -119,8 +170,9 @@ async def analyze_link(req: AnalyzeRequest):
 
 
 @router.post("/qa")
-async def qa_on_link(req: QARequest):
+async def qa_on_link(req: QARequest, request: Request):
     try:
+        _check_and_bump_text_allowance(request, _plan(request))
         html = await fetch_url_text(str(req.url))
         system = (
             "You answer questions about the provided public post/article content. If unsure, say so."
@@ -147,8 +199,9 @@ async def qa_on_link(req: QARequest):
 
 
 @router.post("/draft")
-async def draft_from_link(req: DraftRequest):
+async def draft_from_link(req: DraftRequest, request: Request):
     try:
+        _check_and_bump_text_allowance(request, _plan(request))
         html = await fetch_url_text(str(req.url))
         platform_guide = PLATFORM_GUIDELINES.get(req.platform, PLATFORM_GUIDELINES["general"])
         tone_guide = TONE_GUIDELINES.get(req.tone, TONE_GUIDELINES["professional"])

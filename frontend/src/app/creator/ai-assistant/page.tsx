@@ -48,6 +48,27 @@ interface VideoGeneration {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:8000';
 
+type PlanName = 'free' | 'pro' | 'team';
+function loadPlan(): PlanName {
+  try {
+    return (localStorage.getItem('plan') as PlanName) || 'free';
+  } catch {
+    return 'free';
+  }
+}
+function ensureClientId(): string {
+  try {
+    let cid = localStorage.getItem('clientId');
+    if (!cid) {
+      cid = 'cid-' + Math.random().toString(36).slice(2);
+      localStorage.setItem('clientId', cid);
+    }
+    return cid;
+  } catch {
+    return 'cid-anon';
+  }
+}
+
 export default function VideoCreatorPage() {
   const router = useRouter();
   
@@ -77,6 +98,8 @@ export default function VideoCreatorPage() {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('script');
   const [copied, setCopied] = useState(false);
+  const [plan, setPlan] = useState<PlanName>('free');
+  const [clientId, setClientId] = useState<string>('cid-anon');
 
   // Platform options
   const platforms = [
@@ -109,6 +132,14 @@ export default function VideoCreatorPage() {
     { value: 180, label: '3 minutes' }
   ];
 
+  // Load pricing context
+  useEffect(() => {
+    setPlan(loadPlan());
+    setClientId(ensureClientId());
+  }, []);
+
+  const authHeaders = { 'X-Plan': plan, 'X-Client-Id': clientId } as const;
+
   // API calls
   const generateScript = async () => {
     if (!topic.trim()) {
@@ -122,7 +153,7 @@ export default function VideoCreatorPage() {
     try {
       const response = await fetch(`${API_BASE}/video/generate-script`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           topic,
           platform,
@@ -161,7 +192,7 @@ export default function VideoCreatorPage() {
     try {
       const response = await fetch(`${API_BASE}/video/generate-outline`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           topic,
           platform,
@@ -197,7 +228,7 @@ export default function VideoCreatorPage() {
     try {
       const response = await fetch(`${API_BASE}/video/generate-video-ideas`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           topic,
           platform,
@@ -233,7 +264,7 @@ export default function VideoCreatorPage() {
     try {
       const response = await fetch(`${API_BASE}/video/generate-scene-details`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           script: generatedScript.script,
           scene_number: sceneNumber,
@@ -272,7 +303,7 @@ export default function VideoCreatorPage() {
     try {
       const response = await fetch(`${API_BASE}/video/create-video`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           script: generatedScript.script,
           platform: generatedScript.platform,
@@ -353,7 +384,7 @@ export default function VideoCreatorPage() {
     try {
       const res = await fetch(`${API_BASE}/video/create-demo-video`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           script: scriptText,
           title: 'AI Demo Video',
@@ -418,6 +449,19 @@ export default function VideoCreatorPage() {
           <p className="text-gray-600 dark:text-gray-300 text-lg">
             Transform your ideas into engaging video content with AI-powered scripts, outlines, and production guidance
           </p>
+          <div className="mt-3 inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 bg-white/70 dark:bg-gray-800 px-3 py-1 rounded-lg">
+            Plan: <b className="ml-1 capitalize">{plan}</b>
+            <button
+              onClick={() => {
+                const next: PlanName = plan === 'free' ? 'pro' : plan === 'pro' ? 'team' : 'free';
+                try { localStorage.setItem('plan', next); } catch {}
+                setPlan(next);
+              }}
+              className="ml-2 px-2 py-0.5 rounded bg-gradient-to-r from-purple-600 to-pink-500 text-white"
+            >
+              Switch
+            </button>
+          </div>
         </header>
 
         {/* Input Section */}
