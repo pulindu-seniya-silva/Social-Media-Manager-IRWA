@@ -405,7 +405,7 @@ async def generate_image_variation(req: ImageVariationRequest, request: Request)
                 image_url = gen.data[0].url
                 return {"image_url": image_url}
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": str(e), "image_url": ""}
 
 #app.include_router(router, prefix="/content")
 

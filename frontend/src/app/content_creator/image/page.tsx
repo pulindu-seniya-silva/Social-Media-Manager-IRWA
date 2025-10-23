@@ -29,6 +29,7 @@ export default function ImageAnalyzePage() {
   const [error, setError] = useState('');
   const [loadingCaption, setLoadingCaption] = useState(false);
   const [loadingVariation, setLoadingVariation] = useState(false);
+  const [imageLoading, setImageLoading] = useState(false);
   const [plan, setPlan] = useState<PlanName>('free');
   const [clientId, setClientId] = useState<string>('cid-anon');
 
@@ -76,9 +77,27 @@ export default function ImageAnalyzePage() {
           topic: topic || undefined,
         }),
       });
+      
+      if (!res.ok) {
+        if (res.status === 402) {
+          setError('Image generation requires Pro or Team plan. Please upgrade your plan.');
+        } else if (res.status === 429) {
+          setError('Daily limit reached. Please try again tomorrow or upgrade your plan.');
+        } else {
+          setError(`Server error: ${res.status}`);
+        }
+        setCaption('');
+        return;
+      }
+      
       const data = await res.json();
-      if (data.error) setError(data.error);
-      else setCaption(data.content || '');
+      if (data.error) {
+        setError(data.error);
+        setCaption('');
+      } else {
+        setCaption(data.content || '');
+        setError('');
+      }
     } catch (e) {
       setError('Failed to generate caption from image.');
     } finally {
@@ -100,9 +119,31 @@ export default function ImageAnalyzePage() {
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ image_base64: uploadBase64, prompt: topic || undefined, size: '1024x1024' }),
       });
+      
+      if (!res.ok) {
+        if (res.status === 402) {
+          setError('Image generation requires Pro or Team plan. Please upgrade your plan.');
+        } else if (res.status === 429) {
+          setError('Daily limit reached. Please try again tomorrow or upgrade your plan.');
+        } else {
+          setError(`Server error: ${res.status}`);
+        }
+        setVariationUrl('');
+        return;
+      }
+      
       const data = await res.json();
-      if (data.error) setError(data.error);
-      else setVariationUrl(data.image_url || '');
+      console.log('Image variation API response:', data);
+      
+      if (data.error) {
+        setError(data.error);
+        setVariationUrl('');
+      } else {
+        const imageUrl = data.image_url || '';
+        console.log('Setting variation URL:', imageUrl);
+        setVariationUrl(imageUrl);
+        setError('');
+      }
     } catch (e) {
       setError('Failed to generate image variation.');
     } finally {
@@ -186,7 +227,22 @@ export default function ImageAnalyzePage() {
             </button>
 
             {error && (
-              <div className="mt-3 bg-red-100 border-l-4 border-red-500 text-red-700 p-3 rounded-lg">{error}</div>
+              <div className="mt-3 bg-red-100 border-l-4 border-red-500 text-red-700 p-3 rounded-lg">
+                {error}
+                {error.includes('Pro or Team plan') && (
+                  <div className="mt-2">
+                    <button 
+                      onClick={() => {
+                        // You can implement plan upgrade logic here
+                        alert('Plan upgrade functionality would be implemented here');
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                    >
+                      Upgrade Plan
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -211,11 +267,36 @@ export default function ImageAnalyzePage() {
               <div className="mt-6">
                 <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">Generated Image</h3>
                 <div className="flex justify-center">
-                  <Image src={variationUrl} alt="variation" width={1024} height={1024} className="rounded-xl border border-gray-200 dark:border-gray-700 object-contain max-h-96" />
+                  {imageLoading && (
+                    <div className="flex items-center justify-center w-full h-64 bg-gray-100 dark:bg-gray-800 rounded-xl">
+                      <div className="text-gray-600 dark:text-gray-400">Loading image...</div>
+                    </div>
+                  )}
+                  <img 
+                    src={variationUrl} 
+                    alt="Generated variation" 
+                    width={1024} 
+                    height={1024} 
+                    className={`rounded-xl border border-gray-200 dark:border-gray-700 object-contain max-h-96 ${imageLoading ? 'hidden' : ''}`}
+                    onLoadStart={() => setImageLoading(true)}
+                    onError={(e) => {
+                      console.error('Image failed to load:', variationUrl);
+                      setImageLoading(false);
+                      e.currentTarget.style.display = 'none';
+                      setError('Failed to load generated image. The image URL may be invalid or expired.');
+                    }}
+                    onLoad={() => {
+                      setImageLoading(false);
+                      setError(''); // Clear any previous errors when image loads successfully
+                    }}
+                  />
                 </div>
-                <div className="mt-3 flex justify-end gap-3">
-                  <a href={variationUrl} download className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700">Download</a>
-                </div>
+                {variationUrl && !imageLoading && (
+                  <div className="mt-3 flex justify-end gap-3">
+                    <a href={variationUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700">View Full Size</a>
+                    <a href={variationUrl} download className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700">Download</a>
+                  </div>
+                )}
               </div>
             )}
           </div>
