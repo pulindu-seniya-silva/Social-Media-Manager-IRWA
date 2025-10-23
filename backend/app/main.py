@@ -16,6 +16,7 @@ from app.routes.engagement import router as engagement_api_router  # /api/engage
 from app.agents.content_creator import router as content_creator_router
 from app.agents.content_moderator import router as content_moderator_router
 from app.agents.video_creator import router as video_creator_router
+from app.routes.engagement import router as engagement_router
 
 # Try to support either `router` or `routes` in the engagement agent
 engagement_agent_router = None
