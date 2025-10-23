@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 
 // --- Types ---
 type Platform = "Instagram" | "Facebook" | "X (Twitter)" | "TikTok" | "LinkedIn" | "YouTube";
@@ -102,6 +103,8 @@ function SchedulerBody() {
   const [message, setMessage] = useState<string>("");
   const [bestISO, setBestISO] = useState<string | null>(null);
   const [bestPretty, setBestPretty] = useState<string | null>(null);
+  const [suggestedTime, setSuggestedTime] = useState<string>("");
+  const [showTimeInput, setShowTimeInput] = useState(false);
   const [heatmap, setHeatmap] = useState<number[][] | null>(null);
   const [highlight, setHighlight] = useState<{ weekday: number; hour_24: number } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -139,6 +142,8 @@ function SchedulerBody() {
       const data = await suggestBestTime({ platform, content_type: contentType, timezone, content: fullContent, strategy: useLLM ? "llm" : "heuristic" });
       setBestISO(data.best_iso_utc);
       setBestPretty(data.best_local_pretty);
+      setSuggestedTime(data.best_iso_utc);
+      setShowTimeInput(true);
       setReason(data.reason ?? null);
       setHeatmap(data.heatmap);
       setDataSourceExplanation(data.data_source_explanation);
@@ -157,7 +162,7 @@ function SchedulerBody() {
   const onSchedule = async () => {
     const fullContent = `${content} ${hashtags.split(",").map(t => `#${t.trim()}`).join(" ")}`.trim();
     if (!fullContent) { setMessage("Cannot schedule empty content."); return; }
-    if (!bestISO) { setMessage("Please suggest a time first to schedule."); return; }
+    if (!suggestedTime) { setMessage("Please suggest a time first to schedule."); return; }
 
     setIsScheduling(true);
     setMessage(`Scheduling for ${platform} (Demonstration)...`);
@@ -165,10 +170,10 @@ function SchedulerBody() {
       const result = await schedulePost({
         content: fullContent,
         platform: platform,
-        schedule_at_iso: bestISO,
+        schedule_at_iso: suggestedTime,
       });
 
-      const newItem: ScheduledItem = { id: `${Date.now()}`, platform, content: fullContent, scheduledAt: bestISO, timezone };
+      const newItem: ScheduledItem = { id: `${Date.now()}`, platform, content: fullContent, scheduledAt: suggestedTime, timezone };
       const existingPostsRaw = sessionStorage.getItem('mockScheduledPosts');
       const existingPosts = existingPostsRaw ? JSON.parse(existingPostsRaw) : [];
       const updatedPosts = [...existingPosts, newItem].sort((a,b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
@@ -182,6 +187,30 @@ function SchedulerBody() {
     }
   };
 
+  function formatSuggestedTime(iso: string) {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString();
+    } catch {
+      return iso;
+    }
+  }
+
+  function toLocalInputValue(iso: string) {
+    try {
+      const d = new Date(iso);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      const mm = pad(d.getMonth() + 1);
+      const dd = pad(d.getDate());
+      const hh = pad(d.getHours());
+      const mi = pad(d.getMinutes());
+      return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+    } catch {
+      return "";
+    }
+  }
+
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 text-white">
       <div className="max-w-7xl mx-auto py-10 px-4">
@@ -191,7 +220,10 @@ function SchedulerBody() {
               <h1 className="text-3xl md:text-4xl font-bold tracking-tight">⏲️ Post Scheduler</h1>
               <p className="text-slate-300 mt-2 max-w-2xl">Find the optimal time and schedule your post.</p>
             </div>
-            {message && <div className="bg-emerald-500/15 text-emerald-200 border border-emerald-500/30 rounded-xl px-4 py-2">{message}</div>}
+            <div className="flex items-center gap-2">
+              <Link href="/schedule_view" className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm">View Scheduled</Link>
+              {message && <div className="bg-emerald-500/15 text-emerald-200 border border-emerald-500/30 rounded-xl px-4 py-2">{message}</div>}
+            </div>
           </div>
         </header>
 
@@ -223,13 +255,53 @@ function SchedulerBody() {
               <button onClick={() => onSuggest(true)} disabled={loading || isScheduling} className="px-4 py-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:opacity-95 disabled:opacity-50">{loading ? "Analyzing…" : "✨ Suggest Best Time"}</button>
               <button 
                 onClick={onSchedule}
-                disabled={loading || isScheduling || !bestISO}
-                title={!bestISO ? "Suggest a time first" : `Schedule this post for ${platform}`}
+                disabled={loading || isScheduling || !suggestedTime}
+                title={!suggestedTime ? "Suggest a time first" : `Schedule this post for ${platform}`}
                 className="px-4 py-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50"
               >
                 {isScheduling ? "Scheduling..." : `✅ Schedule Post`}
               </button>
             </div>
+
+            {suggestedTime && (
+              <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <div className="text-sm text-emerald-200">AI Suggested Time:</div>
+                    <div className="text-lg font-semibold text-emerald-100">{formatSuggestedTime(suggestedTime)}</div>
+                  </div>
+                  <button 
+                    onClick={() => setShowTimeInput(!showTimeInput)}
+                    className="px-3 py-1 rounded bg-slate-600 hover:bg-slate-500 text-white text-sm"
+                  >
+                    {showTimeInput ? "Hide" : "Change Time"}
+                  </button>
+                </div>
+                
+                {showTimeInput && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm text-emerald-200 mb-1">Custom Schedule Time</label>
+                      <input 
+                        type="datetime-local" 
+                        defaultValue={toLocalInputValue(suggestedTime)}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v) {
+                            const newIso = new Date(v).toISOString();
+                            setSuggestedTime(newIso);
+                          }
+                        }}
+                        className="w-full rounded-xl bg-slate-900/60 border border-white/10 px-3 py-2"
+                      />
+                    </div>
+                    <div className="text-xs text-emerald-200/80">
+                      Current: {formatSuggestedTime(suggestedTime)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {bestISO && reason && (
                 <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
